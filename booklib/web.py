@@ -1,6 +1,7 @@
 import urllib.parse
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, abort, make_response
-from . import db, scanner, enrich, openers
+from flask import (Flask, render_template, request, redirect, url_for,
+                   jsonify, send_from_directory, abort, make_response, Response)
+from . import db, scanner, enrich, openers, ai
 from .config import COVERS_DIR, SEARCH_LINKS, THEMES, VIEWS, SPINE_COLORS, APP_DIR
 
 def create_app():
@@ -61,7 +62,6 @@ def create_app():
         sql += f" ORDER BY b.{sort} {order}"
         with db.connect() as c:
             books = [dict(r) for r in c.execute(sql, params)]
-        # группировка по полкам для режима shelves
         shelves_with_books = []
         if request.cookies.get("view") == "shelves":
             with db.connect() as c:
@@ -78,8 +78,8 @@ def create_app():
                     ORDER BY b.title LIMIT 200""")]
                 shelves_with_books.append({"name": "Без полки", "books": unshelved, "unshelved": True})
         return render_template("index.html", books=books, q=q, status=status, fmt=fmt,
-                               shelf=shelf, tag=tag, sort=sort,
-                               roots=db.roots(), scan=scanner.status(), enrich=enrich.status(),
+                               shelf=shelf, tag=tag, sort=sort, roots=db.roots(),
+                               scan=scanner.status(), enrich=enrich.status(),
                                shelves_with_books=shelves_with_books)
 
     @app.route("/scan", methods=["POST"])
@@ -124,20 +124,21 @@ def create_app():
                 "SELECT s.name FROM shelves s JOIN book_shelves bs ON bs.shelf_id=s.id WHERE bs.book_id=?", (bid,))]
         q = urllib.parse.quote(f"{book['title']} {book['author']}".strip())
         links = [(label, url.format(q=q)) for label, url in SEARCH_LINKS]
+        s = db.get_settings()
         return render_template("card.html", book=book, tags=tags, shelves=shelves, links=links,
-                               cover_msg=request.args.get("cover_msg"))
+                               cover_msg=request.args.get("cover_msg"),
+                               ai_engine=s.get("ai_engine", "off"))
 
     @app.route("/book/<int:bid>/update", methods=["POST"])
     def update(bid):
         f = request.form
         with db.connect() as c:
             c.execute("""UPDATE books SET title=?, author=?, description=?, status=?,
-                                              rating=?, notes=?, needs_review=0,
-                                              updated_at=CURRENT_TIMESTAMP WHERE id=?""",
-                      (f.get("title", ""), f.get("author", ""), f.get("description", ""),
-                       f.get("status", "unread"),
-                       int(f["rating"]) if f.get("rating") else None,
-                       f.get("notes", ""), bid))
+                rating=?, notes=?, needs_review=0, updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (f.get("title",""), f.get("author",""), f.get("description",""),
+                 f.get("status","unread"),
+                 int(f["rating"]) if f.get("rating") else None,
+                 f.get("notes",""), bid))
         _set_tags(bid, f.get("tags", ""))
         _set_shelves(bid, f.get("shelves", ""))
         return redirect(url_for("card", bid=bid))
@@ -191,20 +192,40 @@ def create_app():
         if row: openers.reveal(row["path"])
         return ("", 204)
 
+    @app.route("/book/<int:bid>/summarize", methods=["POST"])
+    def summarize(bid):
+        ai.summarize_async(bid)
+        return jsonify({"ok": True})
+
+    @app.route("/book/<int:bid>/summary_status")
+    def summary_status(bid):
+        st = ai.state_for(bid)
+        with db.connect() as c:
+            row = c.execute("SELECT summary, summary_engine, summary_at FROM books WHERE id=?", (bid,)).fetchone()
+        return jsonify({
+            "running": st["running"], "error": st["error"],
+            "summary": row["summary"] if row else None,
+            "engine": row["summary_engine"] if row else None,
+            "at": row["summary_at"] if row else None,
+        })
+
+    @app.route("/book/<int:bid>/summary/clear", methods=["POST"])
+    def clear_summary(bid):
+        with db.connect() as c:
+            c.execute("UPDATE books SET summary=NULL, summary_engine=NULL, summary_at=NULL WHERE id=?", (bid,))
+        return redirect(url_for("card", bid=bid))
+
     @app.route("/cover/<name>")
     def cover(name):
         return send_from_directory(COVERS_DIR, name)
 
     @app.route("/background.jpg")
     def background_image():
-        """Отдаёт свою картинку-фон из APP_DIR, если её положили."""
         bg = APP_DIR / "background.jpg"
         if bg.exists():
             resp = send_from_directory(APP_DIR, "background.jpg")
             resp.headers["Cache-Control"] = "public, max-age=3600"
             return resp
-        # ничего нет — отдаём прозрачный пиксель, чтобы браузер не ругался
-        from flask import Response
         transparent = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'
                        b'\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00'
                        b'\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\x00\x01\x00'
@@ -233,7 +254,6 @@ def create_app():
 
     @app.route("/duplicates/clean", methods=["POST"])
     def duplicates_clean():
-        """Удаляет все книги, кроме самой заполненной в каждой группе."""
         groups = db.find_duplicates()
         removed = 0
         with db.connect() as c:
@@ -245,12 +265,10 @@ def create_app():
 
     @app.route("/shelf/move", methods=["POST"])
     def shelf_move():
-        """Перетаскивание книги на другую полку."""
         data = request.get_json(force=True)
         bid = int(data.get("book_id"))
         shelf = (data.get("shelf") or "").strip()
-        if not shelf:
-            return jsonify({"ok": False, "err": "no shelf"})
+        if not shelf: return jsonify({"ok": False, "err": "no shelf"})
         with db.connect() as c:
             c.execute("INSERT OR IGNORE INTO shelves(name) VALUES(?)", (shelf,))
             sid = c.execute("SELECT id FROM shelves WHERE name=?", (shelf,)).fetchone()["id"]
@@ -259,15 +277,41 @@ def create_app():
                 c.execute("INSERT OR IGNORE INTO book_shelves(book_id, shelf_id) VALUES(?,?)", (bid, sid))
         return jsonify({"ok": True})
 
-    @app.route("/shelf/remove", methods=["POST"])
-    def shelf_remove():
-        bid = int(request.form.get("book_id"))
-        shelf = request.form.get("shelf", "").strip()
-        with db.connect() as c:
-            sid_row = c.execute("SELECT id FROM shelves WHERE name=?", (shelf,)).fetchone()
-            if sid_row:
-                c.execute("DELETE FROM book_shelves WHERE book_id=? AND shelf_id=?", (bid, sid_row["id"]))
-        return redirect(request.referrer or url_for("index"))
+    # ============ НАСТРОЙКИ ============
+    @app.route("/settings")
+    def settings():
+        s = db.get_settings()
+        defaults = {
+            "voice_lang": "ru-RU", "ai_engine": "off",
+            "ollama_url": "http://localhost:11434", "ollama_model": "llama3.1:8b",
+            "openai_key": "", "openai_model": "gpt-4o-mini",
+            "anthropic_key": "", "anthropic_model": "claude-3-5-haiku-20241022",
+        }
+        for k, v in defaults.items():
+            if k not in s or s[k] is None:
+                s[k] = v
+        return render_template("settings.html", settings=s, test_result=None)
+
+    @app.route("/settings/save", methods=["POST"])
+    def settings_save():
+        data = {
+            "voice_lang":      request.form.get("voice_lang", "ru-RU"),
+            "ai_engine":       request.form.get("ai_engine", "off"),
+            "ollama_url":      request.form.get("ollama_url", "").strip(),
+            "ollama_model":    request.form.get("ollama_model", "").strip(),
+            "openai_key":      request.form.get("openai_key", "").strip(),
+            "openai_model":    request.form.get("openai_model", "").strip(),
+            "anthropic_key":   request.form.get("anthropic_key", "").strip(),
+            "anthropic_model": request.form.get("anthropic_model", "").strip(),
+        }
+        db.save_settings(data)
+        return redirect(url_for("settings", saved=1))
+
+    @app.route("/settings/test", methods=["POST"])
+    def settings_test():
+        ok, msg = ai.test_engine()
+        s = db.get_settings()
+        return render_template("settings.html", settings=s, test_result={"ok": ok, "msg": msg})
 
     return app
 
