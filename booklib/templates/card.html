@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/">← Назад к каталогу</a>
+<h1>{{ book.title or '(без названия)' }}</h1>
+<p style="color:#555;">{{ book.author }}</p>
+
+<div style="display:flex;gap:16px;margin:16px 0;flex-wrap:wrap;">
+  <button class="primary" onclick="fetch('/book/{{book.id}}/open',{method:'POST'})">Открыть файл</button>
+  <button onclick="fetch('/book/{{book.id}}/reveal',{method:'POST'})">Показать в папке</button>
+  {% for label, url in links %}
+    <a href="{{url}}" target="_blank" rel="noopener"><button>{{label}}</button></a>
+  {% endfor %}
+</div>
+
+<form method="post" action="/book/{{book.id}}/update" style="display:grid;grid-template-columns:260px 1fr;gap:20px;">
+  <div>
+    {% if book.cover %}
+      <img src="/cover/{{book.cover}}" style="width:100%;border-radius:8px;">
+    {% else %}
+      <div style="height:340px;background:#e6e6ef;border-radius:8px;"></div>
+    {% endif %}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <label>Название <input name="title" value="{{ book.title }}" style="width:100%"></label>
+    <label>Автор    <input name="author" value="{{ book.author }}" style="width:100%"></label>
+    <label>Статус
+      <select name="status">
+        {% for s,label in [('unread','Не прочитано'),('reading','Читаю сейчас'),('read','Прочитано'),('postponed','Отложено')] %}
+          <option value="{{s}}" {% if book.status==s %}selected{% endif %}>{{label}}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Оценка
+      <select name="rating">
+        <option value="">—</option>
+        {% for i in [1,2,3,4,5] %}
+          <option value="{{i}}" {% if book.rating==i %}selected{% endif %}>{{ '★' * i }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Теги (через запятую)  <input name="tags" value="{{ tags|join(', ') }}" style="width:100%"></label>
+    <label>Полки (через запятую) <input name="shelves" value="{{ shelves|join(', ') }}" style="width:100%"></label>
+    <label>Описание
+      <textarea name="description" rows="6" style="width:100%">{{ book.description }}</textarea>
+    </label>
+    <label>Заметки
+      <textarea name="notes" rows="5" style="width:100%">{{ book.notes or '' }}</textarea>
+    </label>
+    <div><button class="primary" type="submit">Сохранить</button></div>
+  </div>
+</form>
+
+<details style="margin-top:24px;">
+  <summary style="cursor:pointer;">Техническая информация</summary>
+  <p style="font-size:13px;color:#555;">
+    Путь: {{ book.path }}<br>
+    Формат: {{ book.fmt }} · Размер: {{ book.size }} · Отпечаток: {{ book.fingerprint }}
+  </p>
+</details>
+{% endblock %}

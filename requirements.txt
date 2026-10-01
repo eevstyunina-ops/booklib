@@ -1,0 +1,6 @@
+Flask>=3.0
+requests>=2.31
+lxml>=5.0
+pypdf>=4.0
+Pillow>=10.0
+pyinstaller>=6.0

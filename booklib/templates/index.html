@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="toolbar" method="get" action="/">
+  <input type="text" name="q" value="{{ q }}" placeholder="Поиск по названию или автору">
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for s,label in [('unread','Не прочитано'),('reading','Читаю'),('read','Прочитано'),('postponed','Отложено')] %}
+      <option value="{{s}}" {% if status==s %}selected{% endif %}>{{label}}</option>
+    {% endfor %}
+  </select>
+  <select name="sort">
+    {% for s,label in [('title','По названию'),('author','По автору'),('added_at','По дате добавления'),('rating','По оценке')] %}
+      <option value="{{s}}" {% if sort==s %}selected{% endif %}>{{label}}</option>
+    {% endfor %}
+  </select>
+  <button class="primary" type="submit">Применить</button>
+</form>
+
+<div class="toolbar">
+  <form method="post" action="/scan"><button class="primary">Сканировать</button></form>
+  <form method="post" action="/enrich"><button>Подгрузить описания</button></form>
+  <form method="post" action="/roots/add" style="display:flex;gap:6px;">
+    <input name="path" placeholder="Путь к папке с книгами" size="40">
+    <button type="submit">Добавить папку</button>
+  </form>
+</div>
+
+{% if scan.running or enrich.running %}
+<div id="progress" style="margin-bottom:12px;">
+  {% if scan.running %}Сканирование: {{scan.done}} / {{scan.total}} — {{scan.current}}{% endif %}
+  {% if enrich.running %} | Обогащение: {{enrich.done}} / {{enrich.total}}{% endif %}
+</div>
+<script>
+setInterval(async () => {
+  const r = await fetch('/scan/status'); const j = await r.json();
+  const el = document.getElementById('progress');
+  if (!el) return;
+  let s = '';
+  if (j.scan.running) s += `Сканирование: ${j.scan.done} / ${j.scan.total} — ${j.scan.current}`;
+  if (j.enrich.running) s += ` | Обогащение: ${j.enrich.done} / ${j.enrich.total}`;
+  if (!s) { location.reload(); return; }
+  el.textContent = s;
+}, 1500);
+</script>
+{% endif %}
+
+{% if roots %}
+<div style="margin-bottom:16px; color:#555; font-size:13px;">
+  Папки:
+  {% for r in roots %}
+    {{ r }}
+    <form method="post" action="/roots/remove" style="display:inline">
+      <input type="hidden" name="path" value="{{ r }}">
+      <button style="border:none;background:none;color:#b33;cursor:pointer;">×</button>
+    </form>
+    {% if not loop.last %} · {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if missing_view %}
+  <form method="post" action="/missing/purge">
+  <p>Эти файлы не найдены при последнем сканировании. Отметьте те, чьи карточки действительно нужно удалить.</p>
+  <button class="primary" type="submit">Удалить отмеченные</button>
+  <div class="grid" style="margin-top:12px;">
+  {% for b in books %}
+    <div class="tile">
+      <label><input type="checkbox" name="ids" value="{{b.id}}"> удалить</label>
+      <div class="t">{{ b.title or b.path }}</div>
+      <div class="a">{{ b.author }}</div>
+    </div>
+  {% endfor %}
+  </div>
+  </form>
+{% else %}
+  <div class="grid">
+  {% for b in books %}
+    <a class="tile" href="/book/{{b.id}}" style="text-decoration:none;color:inherit;">
+      {% if b.cover %}<img src="/cover/{{b.cover}}" alt="">{% else %}<div style="height:220px;background:#e6e6ef;border-radius:4px;"></div>{% endif %}
+      <div class="t">{{ b.title or '(без названия)' }}</div>
+      <div class="a">{{ b.author }}</div>
+      {% if b.needs_review %}<span class="badge" style="background:#ffe2b8;">требует проверки</span>{% endif %}
+    </a>
+  {% endfor %}
+  </div>
+  {% if not books %}<p>Пока ничего нет. Добавьте папку и нажмите «Сканировать».</p>{% endif %}
+{% endif %}
+{% endblock %}
