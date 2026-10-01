@@ -18,7 +18,8 @@
 
 <div class="toolbar">
   <form method="post" action="/scan"><button class="primary">Сканировать</button></form>
-  <form method="post" action="/enrich"><button>Подгрузить описания</button></form>
+  <form method="post" action="/enrich"><button>Найти обложки и описания</button></form>
+  <form method="post" action="/enrich/reset"><button title="Сбросить результаты поиска и найти заново">↻</button></form>
   <form method="post" action="/roots/add" style="display:flex;gap:6px;">
     <input name="path" placeholder="Путь к папке с книгами" size="40">
     <button type="submit">Добавить папку</button>
@@ -26,9 +27,9 @@
 </div>
 
 {% if scan.running or enrich.running %}
-<div id="progress" style="margin-bottom:12px;">
-  {% if scan.running %}Сканирование: {{scan.done}} / {{scan.total}} — {{scan.current}}{% endif %}
-  {% if enrich.running %} | Обогащение: {{enrich.done}} / {{enrich.total}}{% endif %}
+<div id="progress" style="margin-bottom:12px;padding:8px 12px;background:#fff;border-radius:6px;">
+  {% if scan.running %}📖 Сканирование: {{scan.done}} / {{scan.total}} — {{scan.current}}{% endif %}
+  {% if enrich.running %}🔍 Поиск обложек: {{enrich.done}} / {{enrich.total}}{% endif %}
 </div>
 <script>
 setInterval(async () => {
@@ -36,8 +37,8 @@ setInterval(async () => {
   const el = document.getElementById('progress');
   if (!el) return;
   let s = '';
-  if (j.scan.running) s += `Сканирование: ${j.scan.done} / ${j.scan.total} — ${j.scan.current}`;
-  if (j.enrich.running) s += ` | Обогащение: ${j.enrich.done} / ${j.enrich.total}`;
+  if (j.scan.running) s += `📖 Сканирование: ${j.scan.done} / ${j.scan.total} — ${j.scan.current}`;
+  if (j.enrich.running) s += ` 🔍 Поиск обложек: ${j.enrich.done} / ${j.enrich.total}`;
   if (!s) { location.reload(); return; }
   el.textContent = s;
 }, 1500);

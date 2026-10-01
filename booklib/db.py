@@ -4,24 +4,25 @@ from .config import DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
-    id           INTEGER PRIMARY KEY,
-    fingerprint  TEXT UNIQUE NOT NULL,
-    path         TEXT NOT NULL,
-    size         INTEGER NOT NULL,
-    mtime        REAL,
-    fmt          TEXT,
-    title        TEXT,
-    author       TEXT,
-    description  TEXT,
-    cover        TEXT,
-    status       TEXT DEFAULT 'unread',
-    rating       INTEGER,
-    notes        TEXT,
-    needs_review INTEGER DEFAULT 0,
-    missing      INTEGER DEFAULT 0,
-    enriched     INTEGER DEFAULT 0,
-    added_at     TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+    id            INTEGER PRIMARY KEY,
+    fingerprint   TEXT UNIQUE NOT NULL,
+    path          TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    mtime         REAL,
+    fmt           TEXT,
+    title         TEXT,
+    author        TEXT,
+    description   TEXT,
+    cover         TEXT,
+    status        TEXT DEFAULT 'unread',
+    rating        INTEGER,
+    notes         TEXT,
+    needs_review  INTEGER DEFAULT 0,
+    missing       INTEGER DEFAULT 0,
+    enriched      INTEGER DEFAULT 0,
+    cover_checked INTEGER DEFAULT 0,
+    added_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -60,9 +61,19 @@ CREATE INDEX IF NOT EXISTS idx_books_title   ON books(title);
 CREATE INDEX IF NOT EXISTS idx_books_author  ON books(author);
 """
 
+def _migrate(conn):
+    for sql in [
+        "ALTER TABLE books ADD COLUMN cover_checked INTEGER DEFAULT 0",
+    ]:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+
 def init():
     with connect() as c:
         c.executescript(SCHEMA)
+        _migrate(c)
 
 @contextmanager
 def connect():

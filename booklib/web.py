@@ -39,7 +39,12 @@ def create_app():
 
     @app.route("/enrich", methods=["POST"])
     def do_enrich():
-        enrich.enrich_async()
+        enrich.enrich_async(reset=False)
+        return redirect(url_for("index"))
+
+    @app.route("/enrich/reset", methods=["POST"])
+    def enrich_reset():
+        enrich.enrich_async(reset=True)
         return redirect(url_for("index"))
 
     @app.route("/roots/add", methods=["POST"])
@@ -83,6 +88,29 @@ def create_app():
                        f.get("notes", ""), bid))
         _set_tags(bid, f.get("tags", ""))
         _set_shelves(bid, f.get("shelves", ""))
+        return redirect(url_for("card", bid=bid))
+
+    @app.route("/book/<int:bid>/cover", methods=["POST"])
+    def upload_cover(bid):
+        f = request.files.get("cover")
+        if f and f.filename:
+            name = f"manual_{bid}.jpg"
+            try:
+                from PIL import Image
+                img = Image.open(f.stream).convert("RGB")
+                img.thumbnail((600, 900))
+                img.save(COVERS_DIR / name, "JPEG", quality=85)
+            except Exception:
+                f.stream.seek(0)
+                (COVERS_DIR / name).write_bytes(f.read())
+            with db.connect() as c:
+                c.execute("UPDATE books SET cover=? WHERE id=?", (name, bid))
+        return redirect(url_for("card", bid=bid))
+
+    @app.route("/book/<int:bid>/cover/clear", methods=["POST"])
+    def clear_cover(bid):
+        with db.connect() as c:
+            c.execute("UPDATE books SET cover=NULL WHERE id=?", (bid,))
         return redirect(url_for("card", bid=bid))
 
     @app.route("/book/<int:bid>/open", methods=["POST"])
