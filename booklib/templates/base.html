@@ -49,6 +49,8 @@ body {
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1;
   background:
+    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+    url('/background.jpg') center / cover no-repeat,
     radial-gradient(ellipse 60% 40% at 15% 0%, rgba(255,200,120,.18) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 85% 100%, rgba(200,140,80,.14) 0%, transparent 60%),
     repeating-linear-gradient(90deg,

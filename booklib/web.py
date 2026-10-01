@@ -1,7 +1,7 @@
 import urllib.parse
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, abort, make_response
 from . import db, scanner, enrich, openers
-from .config import COVERS_DIR, SEARCH_LINKS, THEMES, VIEWS, SPINE_COLORS
+from .config import COVERS_DIR, SEARCH_LINKS, THEMES, VIEWS, SPINE_COLORS, APP_DIR
 
 def create_app():
     app = Flask(__name__, template_folder="templates")
@@ -194,6 +194,22 @@ def create_app():
     @app.route("/cover/<name>")
     def cover(name):
         return send_from_directory(COVERS_DIR, name)
+
+    @app.route("/background.jpg")
+    def background_image():
+        """Отдаёт свою картинку-фон из APP_DIR, если её положили."""
+        bg = APP_DIR / "background.jpg"
+        if bg.exists():
+            resp = send_from_directory(APP_DIR, "background.jpg")
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+            return resp
+        # ничего нет — отдаём прозрачный пиксель, чтобы браузер не ругался
+        from flask import Response
+        transparent = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'
+                       b'\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00'
+                       b'\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\x00\x01\x00'
+                       b'\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82')
+        return Response(transparent, mimetype="image/png")
 
     @app.route("/missing")
     def missing():
