@@ -264,6 +264,32 @@ footer.site-footer .small { opacity: .6; font-size: 11px; margin-top: 10px; }
   .layout { grid-template-columns: 1fr; }
   aside.filters { position: static; max-height: none; }
 }
+
+/* ====== Фон библиотеки (override — ставится в конец <style>, всегда побеждает) ====== */
+body::before {
+  content: "" !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+    url('/background.jpg') center center / cover no-repeat fixed,
+    var(--bg) !important;
+}
+[data-theme="evening"] body::before {
+  background:
+    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+    url('/background.jpg') center center / cover no-repeat fixed,
+    var(--bg) !important;
+}
+[data-theme="pastel"] body::before {
+  background:
+    linear-gradient(var(--bg-overlay), var(--bg-overlay)),
+    url('/background.jpg') center center / cover no-repeat fixed,
+    var(--bg) !important;
+}
+
 </style>
 </head>
 <body>
