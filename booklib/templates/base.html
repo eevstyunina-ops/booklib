@@ -290,7 +290,59 @@ footer.site-footer .small { opacity: .6; font-size: 11px; margin-top: 10px; }
       <button type="submit" name="theme" value="{{ t }}" class="icon-btn {% if theme==t %}active{% endif %}" title="{{ title }}">{{ icon }}</button>
     {% endfor %}
   </form>
+
+  <a href="/settings" class="icon-btn" title="Настройки" style="text-decoration:none;">⚙</a>
 </header>
+
+<!-- Голосовой ввод: глобальные функции -->
+<script>
+(function(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  window.__voice_supported = !!SR;
+  if (!SR) {
+    document.querySelectorAll('.mic-btn').forEach(b => {
+      b.title = 'Голосовой ввод не поддерживается в этом браузере. Откройте в Chrome или Яндекс.Браузере.';
+      b.style.opacity = '.4';
+    });
+  }
+  window.voiceTo = function(targetId, opts) {
+    opts = opts || {};
+    if (!window.__voice_supported) {
+      alert('Голосовой ввод не работает в этом браузере.\nОткройте программу в Chrome или Яндекс.Браузере.');
+      return;
+    }
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const btn = opts.btn || (window.event && window.event.target);
+    const isAppend = target.tagName === 'TEXTAREA' || opts.append;
+    const prefix = isAppend ? (target.value ? target.value.replace(/\s+$/,'') + ' ' : '') : '';
+    const rec = new SR();
+    rec.lang = 'ru-RU';
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = '';
+    if (btn) { btn.classList.add('listening'); btn.dataset.oldTitle = btn.title || ''; btn.title = 'Слушаю...'; }
+    rec.onresult = e => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += (finalText ? ' ' : '') + t.trim();
+        else interim += t;
+      }
+      target.value = prefix + finalText + (interim ? (finalText ? ' ' : '') + interim : '');
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        alert('Доступ к микрофону запрещён.\nРазрешите его в браузере (замочек рядом с адресом).');
+      }
+    };
+    rec.onend = () => {
+      if (btn) { btn.classList.remove('listening'); if (btn.dataset.oldTitle !== undefined) btn.title = btn.dataset.oldTitle; }
+    };
+    try { rec.start(); } catch(err) {}
+  };
+})();
+</script>
 
 <div class="layout">
   <aside class="filters">

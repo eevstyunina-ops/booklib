@@ -2,20 +2,68 @@
 {% block content %}
 <a href="/" style="display:inline-block;margin-bottom:12px;">← Назад к каталогу</a>
 <h1>{{ book.title or '(без названия)' }}</h1>
-<p style="color:var(--text-muted); margin-top:-8px;">{{ book.author or '—' }}</p>
+<p style="color:var(--text-muted);margin-top:-8px;">{{ book.author or '—' }}</p>
 
 {% if cover_msg %}
-  <div style="padding:10px 14px;background:var(--bg-overlay);border-left:4px solid var(--accent);border-radius:6px;margin:12px 0;font-size:14px;">
-    {{ cover_msg }}
-  </div>
+  <div style="padding:10px 14px;background:var(--bg-overlay);border-left:4px solid var(--accent);border-radius:6px;margin:12px 0;font-size:14px;">{{ cover_msg }}</div>
 {% endif %}
 
-<div style="display:flex;gap:16px;margin:16px 0;flex-wrap:wrap;">
+<div style="display:flex;gap:10px;margin:16px 0;flex-wrap:wrap;">
   <button class="primary" onclick="fetch('/book/{{book.id}}/open',{method:'POST'})">📖 Открыть файл</button>
   <button onclick="fetch('/book/{{book.id}}/reveal',{method:'POST'})">📁 Показать в папке</button>
   {% for label, url in links %}
     <a href="{{url}}" target="_blank" rel="noopener"><button>🔗 {{label}}</button></a>
   {% endfor %}
+  <button type="button" onclick="document.getElementById('voice-panel').classList.toggle('open');document.getElementById('voice-panel').scrollIntoView({behavior:'smooth'});" style="background:#C24B4B;color:#fff;border-color:#C24B4B;">🎤 Голосовая заметка</button>
+</div>
+
+<!-- Саммари ИИ -->
+<div style="background:var(--bg-overlay);backdrop-filter:blur(6px);border-radius:10px;padding:18px 22px;margin-bottom:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h2 style="margin:0;font-size:20px;">📖 Краткое содержание</h2>
+    <div style="display:flex;gap:8px;">
+      <button type="button" id="summarize-btn" onclick="runSummary()" class="primary"
+              {% if ai_engine == 'off' %}disabled style="opacity:.5;" title="Включите ИИ в Настройках"{% endif %}>
+        {% if book.summary %}🔄 Обновить{% else %}🤖 Создать{% endif %}
+      </button>
+      {% if book.summary %}
+      <form method="post" action="/book/{{book.id}}/summary/clear" style="display:inline;">
+        <button type="submit">Удалить</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if ai_engine == 'off' %}
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">
+      ИИ выключен. Включите его в <a href="/settings">Настройках</a> — выберите Ollama (бесплатно, локально) или введите ключ OpenAI.
+    </p>
+  {% endif %}
+  <div id="summary-box" style="margin-top:12px;">
+    {% if book.summary %}
+      <div id="summary-text" style="white-space:pre-wrap;line-height:1.6;font-size:15px;">{{ book.summary }}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">
+        Создано: {{ book.summary_at or '—' }} · Движок: {{ book.summary_engine or '—' }}
+      </div>
+    {% else %}
+      <div id="summary-text" style="color:var(--text-muted);">Ещё не создано. Нажмите «🤖 Создать» — ИИ прочитает первые страницы книги и сделает краткий пересказ.</div>
+    {% endif %}
+  </div>
+  <div id="summary-status" style="display:none;margin-top:12px;padding:10px 14px;background:var(--bg-soft);border-radius:8px;font-size:14px;"></div>
+</div>
+
+<!-- Голосовая заметка -->
+<div id="voice-panel" class="voice-panel">
+  <div class="vp-title">🎤 Голосовая заметка</div>
+  <div class="vp-center">
+    <button type="button" class="big-mic" id="voice-big-mic" onclick="startVoiceNote()">🎤</button>
+    <div class="hint" id="voice-hint">Нажмите микрофон и говорите. Нажмите ещё раз — остановить.</div>
+  </div>
+  <div class="vp-text" id="voice-text"><span style="color:var(--text-muted);">Здесь появится расшифровка...</span></div>
+  <div class="vp-actions">
+    <button type="button" class="primary" onclick="appendVoiceToNotes()">➕ Добавить в заметки</button>
+    <button type="button" onclick="clearVoiceText()">Очистить</button>
+    <button type="button" onclick="document.getElementById('voice-panel').classList.remove('open');">Закрыть</button>
+  </div>
 </div>
 
 <div style="display:grid;grid-template-columns:280px 1fr;gap:24px;">
@@ -27,25 +75,20 @@
       <div style="height:380px;background:linear-gradient(135deg,{{c[0]}} 0%,{{c[1]}} 100%);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;color:#fff;padding:20px;text-align:center;">
         <div>
           <div style="font-size:42px;opacity:.6;">📖</div>
-          <div style="margin-top:10px;font-family:Georgia,serif;font-size:16px;text-shadow:0 1px 2px rgba(0,0,0,.3);">
-            {{ book.title or 'Без названия' }}
-          </div>
+          <div style="margin-top:10px;font-family:Georgia,serif;font-size:16px;text-shadow:0 1px 2px rgba(0,0,0,.3);">{{ book.title or 'Без названия' }}</div>
           <div style="font-size:12px;opacity:.85;margin-top:6px;">{{ book.author }}</div>
         </div>
       </div>
     {% endif %}
-
     <form method="post" action="/book/{{book.id}}/cover/search" style="margin-top:12px;">
       <button type="submit" style="width:100%;padding:8px;">🔍 Найти обложку в интернете</button>
     </form>
-
     <form method="post" action="/book/{{book.id}}/cover/upload" enctype="multipart/form-data" style="margin-top:6px;">
       <label style="display:block;cursor:pointer;padding:8px;text-align:center;background:var(--bg-soft);border-radius:8px;font-size:13px;">
         ⬆ Загрузить свою картинку
         <input type="file" name="cover" accept="image/*" onchange="this.form.submit()" style="display:none;">
       </label>
     </form>
-
     {% if book.cover %}
     <form method="post" action="/book/{{book.id}}/cover/clear" style="margin-top:6px;">
       <button type="submit" style="width:100%;padding:6px;font-size:12px;">Удалить обложку</button>
@@ -54,8 +97,18 @@
   </div>
 
   <form method="post" action="/book/{{book.id}}/update" class="card-form" style="display:flex;flex-direction:column;gap:10px;">
-    <label>Название <input name="title" value="{{ book.title }}" style="width:100%"></label>
-    <label>Автор    <input name="author" value="{{ book.author }}" style="width:100%"></label>
+    <label>Название
+      <div class="mic-wrap">
+        <input name="title" id="card-title" value="{{ book.title }}" style="width:100%">
+        <button type="button" class="mic-btn" onclick="window.voiceTo('card-title',{btn:this})" title="Голосом">🎤</button>
+      </div>
+    </label>
+    <label>Автор
+      <div class="mic-wrap">
+        <input name="author" id="card-author" value="{{ book.author }}" style="width:100%">
+        <button type="button" class="mic-btn" onclick="window.voiceTo('card-author',{btn:this})" title="Голосом">🎤</button>
+      </div>
+    </label>
     <label>Статус
       <select name="status">
         {% for s,label in [('unread','Не прочитано'),('reading','Читаю сейчас'),('read','Прочитано'),('postponed','Отложено')] %}
@@ -77,27 +130,121 @@
       <textarea name="description" rows="6" style="width:100%">{{ book.description }}</textarea>
     </label>
     <label>Заметки
-      <textarea name="notes" rows="5" style="width:100%">{{ book.notes or '' }}</textarea>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <textarea name="notes" id="card-notes" rows="6" style="width:100%">{{ book.notes or '' }}</textarea>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="mic-btn" onclick="window.voiceTo('card-notes',{btn:this,append:true})">🎤 Добавить голосом</button>
+          <button type="button" class="mic-btn" onclick="document.getElementById('voice-panel').classList.add('open');document.getElementById('voice-panel').scrollIntoView({behavior:'smooth'});" style="background:#C24B4B;color:#fff;border-color:#C24B4B;">🎤 Длинная заметка</button>
+        </div>
+      </div>
     </label>
     <div><button class="primary" type="submit">💾 Сохранить</button></div>
   </form>
 </div>
 
-<details style="margin-top:24px; background:var(--bg-overlay); padding:12px 16px; border-radius:8px;">
-  <summary style="cursor:pointer; font-weight:600;">Техническая информация</summary>
-  <table style="font-size:13px; color:var(--text-muted); margin-top:10px; border-collapse:collapse;">
-    <tr><td style="padding:3px 10px 3px 0;">Название в базе:</td><td>{{ book.title or '—' }}</td></tr>
-    <tr><td style="padding:3px 10px 3px 0;">Автор в базе:</td><td>{{ book.author or '—' }}</td></tr>
-    <tr><td style="padding:3px 10px 3px 0;">Путь к файлу:</td><td style="word-break:break-all;">{{ book.path }}</td></tr>
+<details style="margin-top:24px;background:var(--bg-overlay);padding:12px 16px;border-radius:8px;">
+  <summary style="cursor:pointer;font-weight:600;">Техническая информация</summary>
+  <table style="font-size:13px;color:var(--text-muted);margin-top:10px;">
+    <tr><td style="padding:3px 10px 3px 0;">Путь:</td><td style="word-break:break-all;">{{ book.path }}</td></tr>
     <tr><td style="padding:3px 10px 3px 0;">Формат:</td><td>{{ book.fmt }}</td></tr>
     <tr><td style="padding:3px 10px 3px 0;">Размер:</td><td>{{ (book.size/1024)|round(1) }} КБ</td></tr>
-    <tr><td style="padding:3px 10px 3px 0;">Отпечаток:</td><td style="font-family:monospace;font-size:11px;">{{ book.fingerprint }}</td></tr>
-    <tr><td style="padding:3px 10px 3px 0;">Проверить вручную:</td><td>{% if book.needs_review %}да{% else %}нет{% endif %}</td></tr>
-    <tr><td style="padding:3px 10px 3px 0;">Обложка найдена:</td><td>{% if book.cover %}да{% else %}нет{% endif %}</td></tr>
   </table>
-  <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-    Если название и автор заполнены неверно — поправьте их выше и нажмите «Сохранить».<br>
-    Затем нажмите «🔍 Найти обложку в интернете» — поиск пойдёт уже по новым данным.
-  </p>
 </details>
+
+<script>
+// ===== Саммари =====
+window.runSummary = function() {
+  const btn = document.getElementById('summarize-btn');
+  const status = document.getElementById('summary-status');
+  const box = document.getElementById('summary-text');
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.textContent = '🤖 Готовлю запрос к ИИ... Это может занять от 10 секунд (OpenAI) до 2 минут (локальная Ollama).';
+  fetch('/book/{{book.id}}/summarize', {method:'POST'});
+  const timer = setInterval(async () => {
+    const r = await fetch('/book/{{book.id}}/summary_status');
+    const j = await r.json();
+    if (j.running) {
+      status.textContent = '⏳ ИИ читает книгу и пишет краткое содержание... Подождите.';
+      return;
+    }
+    clearInterval(timer);
+    btn.disabled = false;
+    if (j.error) {
+      status.innerHTML = '<span style="color:#C24B4B;">✗ Ошибка: ' + j.error + '</span>';
+      return;
+    }
+    if (j.summary) {
+      status.style.display = 'none';
+      box.style.color = 'var(--text)';
+      box.style.whiteSpace = 'pre-wrap';
+      box.textContent = j.summary;
+      btn.textContent = '🔄 Обновить';
+      // добавим подпись
+      let meta = box.parentElement.querySelector('.summary-meta');
+      if (!meta) {
+        meta = document.createElement('div');
+        meta.className = 'summary-meta';
+        meta.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:10px;';
+        box.parentElement.appendChild(meta);
+      }
+      meta.textContent = 'Создано: ' + (j.at || '') + ' · Движок: ' + (j.engine || '');
+    }
+  }, 2000);
+};
+
+// ===== Голосовая заметка =====
+(function(){
+  let noteRec = null, noteFinalText = '';
+  const panelText = document.getElementById('voice-text');
+  const bigMic = document.getElementById('voice-big-mic');
+  const hint = document.getElementById('voice-hint');
+
+  window.clearVoiceText = function() {
+    noteFinalText = '';
+    panelText.innerHTML = '<span style="color:var(--text-muted);">Здесь появится расшифровка...</span>';
+  };
+  window.appendVoiceToNotes = function() {
+    if (!noteFinalText) { alert('Сначала запишите заметку.'); return; }
+    const n = document.getElementById('card-notes');
+    n.value = (n.value ? n.value.replace(/\s+$/, '') + '\n\n' : '') + noteFinalText;
+    n.style.transition = 'background .4s';
+    n.style.background = '#FFF3B0';
+    setTimeout(() => { n.style.background = ''; }, 800);
+    alert('Добавлено в поле заметок. Не забудьте нажать «Сохранить».');
+  };
+  window.startVoiceNote = function() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Голосовой ввод не работает в этом браузере. Откройте в Chrome или Яндекс.Браузере.'); return; }
+    if (noteRec) { noteRec.stop(); return; }
+    noteRec = new SR();
+    noteRec.lang = 'ru-RU';
+    noteRec.interimResults = true;
+    noteRec.continuous = true;
+    bigMic.classList.add('listening');
+    hint.textContent = '🎙 Идёт запись. Говорите. Нажмите ещё раз — остановить.';
+    let interimBuf = '';
+    noteRec.onresult = e => {
+      interimBuf = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          noteFinalText += (noteFinalText ? ' ' : '') + t.trim();
+        } else { interimBuf += t; }
+      }
+      const display = (noteFinalText + (interimBuf ? ' ' + interimBuf : '')).trim();
+      panelText.innerHTML = display ? display.replace(interimBuf ? new RegExp(interimBuf.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$') : /$^/, m => '<span class="interim">' + m + '</span>') : '<span style="color:var(--text-muted);">Говорите...</span>';
+    };
+    noteRec.onerror = e => {
+      if (e.error === 'not-allowed') alert('Доступ к микрофону запрещён. Разрешите его в настройках браузера.');
+    };
+    noteRec.onend = () => {
+      bigMic.classList.remove('listening');
+      hint.textContent = 'Нажмите микрофон, чтобы продолжить, или добавьте текст в заметки.';
+      noteRec = null;
+    };
+    try { noteRec.start(); } catch(err) { noteRec = null; bigMic.classList.remove('listening'); }
+  };
+})();
+</script>
 {% endblock %}
