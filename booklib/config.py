@@ -19,3 +19,16 @@ SEARCH_LINKS = [
     ("Литрес",   "https://www.litres.ru/search/?q={q}"),
     ("Лайвлиб",  "https://www.livelib.ru/find/{q}"),
 ]
+
+THEMES = ["light", "evening", "pastel"]
+VIEWS  = ["tile", "compact", "list", "shelves"]
+
+# пастельные цвета для «корешков» книг без обложки
+SPINE_COLORS = [
+    ("#F5C5CD", "#E8A8B5"),  # розовый
+    ("#C9DFF0", "#A8C5E0"),  # голубой
+    ("#D9D9D9", "#BFBFBF"),  # серый
+    ("#F0E5C9", "#D9C79A"),  # кремовый
+    ("#D4E8D4", "#B5D4B5"),  # шалфей
+    ("#E8D4E8", "#C9B5C9"),  # лиловый
+]

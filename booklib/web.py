@@ -1,37 +1,91 @@
 import urllib.parse
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, abort
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, abort, make_response
 from . import db, scanner, enrich, openers
-from .config import COVERS_DIR, SEARCH_LINKS
+from .config import COVERS_DIR, SEARCH_LINKS, THEMES, VIEWS, SPINE_COLORS
 
 def create_app():
     app = Flask(__name__, template_folder="templates")
     db.init()
 
+    def _ui_state():
+        theme = request.cookies.get("theme", "light")
+        view  = request.cookies.get("view", "tile")
+        if theme not in THEMES: theme = "light"
+        if view  not in VIEWS:  view  = "tile"
+        return theme, view
+
+    @app.context_processor
+    def inject_globals():
+        theme, view = _ui_state()
+        return dict(
+            theme=theme, view=view,
+            all_tags=db.all_tags(), all_shelves=db.all_shelves(),
+            all_formats=db.all_formats(),
+            spine_colors=SPINE_COLORS,
+        )
+
+    @app.route("/prefs", methods=["POST"])
+    def set_prefs():
+        theme = request.form.get("theme")
+        view  = request.form.get("view")
+        resp = make_response(redirect(request.form.get("back") or url_for("index")))
+        if theme in THEMES: resp.set_cookie("theme", theme, max_age=60*60*24*365)
+        if view  in VIEWS:  resp.set_cookie("view",  view,  max_age=60*60*24*365)
+        return resp
+
     @app.route("/")
     def index():
-        q = request.args.get("q", "").strip()
-        status = request.args.get("status", "")
-        sort = request.args.get("sort", "title")
-        order = "ASC" if sort in ("title", "author", "added_at") else "DESC"
-        sql = "SELECT * FROM books WHERE missing=0"
-        params = []
+        q        = request.args.get("q", "").strip()
+        status   = request.args.get("status", "")
+        fmt      = request.args.get("fmt", "")
+        shelf    = request.args.get("shelf", "")
+        tag      = request.args.get("tag", "")
+        sort     = request.args.get("sort", "title")
+        order    = "ASC" if sort in ("title", "author", "added_at") else "DESC"
+        sql = "SELECT DISTINCT b.* FROM books b"
+        joins, where, params = [], ["b.missing=0"], []
+        if shelf:
+            joins.append("JOIN book_shelves bs ON bs.book_id=b.id JOIN shelves s ON s.id=bs.shelf_id")
+            where.append("s.name=?"); params.append(shelf)
+        if tag:
+            joins.append("JOIN book_tags bt ON bt.book_id=b.id JOIN tags t ON t.id=bt.tag_id")
+            where.append("t.name=?"); params.append(tag)
         if q:
-            sql += " AND (title LIKE ? OR author LIKE ?)"
-            params += [f"%{q}%", f"%{q}%"]
+            where.append("(b.title LIKE ? OR b.author LIKE ?)"); params += [f"%{q}%", f"%{q}%"]
         if status:
-            sql += " AND status=?"
-            params.append(status)
-        sql += f" ORDER BY {sort} {order}"
+            where.append("b.status=?"); params.append(status)
+        if fmt:
+            where.append("b.fmt=?"); params.append(fmt)
+        sql += " " + " ".join(joins)
+        sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY b.{sort} {order}"
         with db.connect() as c:
             books = [dict(r) for r in c.execute(sql, params)]
-        return render_template("index.html", books=books, q=q, status=status,
-                               sort=sort, roots=db.roots(),
-                               scan=scanner.status(), enrich=enrich.status())
+        # группировка по полкам для режима shelves
+        shelves_with_books = []
+        if request.cookies.get("view") == "shelves":
+            with db.connect() as c:
+                for s in c.execute("SELECT id, name FROM shelves ORDER BY name"):
+                    bs = [dict(r) for r in c.execute("""
+                        SELECT b.* FROM books b
+                        JOIN book_shelves bs ON bs.book_id=b.id
+                        JOIN shelves s ON s.id=bs.shelf_id
+                        WHERE s.id=? AND b.missing=0 ORDER BY b.title""", (s["id"],))]
+                    shelves_with_books.append({"name": s["name"], "books": bs})
+                unshelved = [dict(r) for r in c.execute("""
+                    SELECT b.* FROM books b
+                    WHERE b.missing=0 AND b.id NOT IN (SELECT book_id FROM book_shelves)
+                    ORDER BY b.title LIMIT 200""")]
+                shelves_with_books.append({"name": "Без полки", "books": unshelved, "unshelved": True})
+        return render_template("index.html", books=books, q=q, status=status, fmt=fmt,
+                               shelf=shelf, tag=tag, sort=sort,
+                               roots=db.roots(), scan=scanner.status(), enrich=enrich.status(),
+                               shelves_with_books=shelves_with_books)
 
     @app.route("/scan", methods=["POST"])
     def scan():
         scanner.scan_async()
-        return redirect(url_for("index"))
+        return redirect(request.referrer or url_for("index"))
 
     @app.route("/scan/status")
     def scan_status():
@@ -40,31 +94,29 @@ def create_app():
     @app.route("/enrich", methods=["POST"])
     def do_enrich():
         enrich.enrich_async(reset=False)
-        return redirect(url_for("index"))
+        return redirect(request.referrer or url_for("index"))
 
     @app.route("/enrich/reset", methods=["POST"])
     def enrich_reset():
         enrich.enrich_async(reset=True)
-        return redirect(url_for("index"))
+        return redirect(request.referrer or url_for("index"))
 
     @app.route("/roots/add", methods=["POST"])
     def add_root():
         p = request.form.get("path", "").strip()
-        if p:
-            db.add_root(p)
-        return redirect(url_for("index"))
+        if p: db.add_root(p)
+        return redirect(request.referrer or url_for("index"))
 
     @app.route("/roots/remove", methods=["POST"])
     def rm_root():
         db.remove_root(request.form.get("path", ""))
-        return redirect(url_for("index"))
+        return redirect(request.referrer or url_for("index"))
 
     @app.route("/book/<int:bid>")
     def card(bid):
         with db.connect() as c:
             row = c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
-            if not row:
-                abort(404)
+            if not row: abort(404)
             book = dict(row)
             tags = [r["name"] for r in c.execute(
                 "SELECT t.name FROM tags t JOIN book_tags bt ON bt.tag_id=t.id WHERE bt.book_id=?", (bid,))]
@@ -81,8 +133,7 @@ def create_app():
         with db.connect() as c:
             c.execute("""UPDATE books SET title=?, author=?, description=?, status=?,
                                               rating=?, notes=?, needs_review=0,
-                                              updated_at=CURRENT_TIMESTAMP
-                         WHERE id=?""",
+                                              updated_at=CURRENT_TIMESTAMP WHERE id=?""",
                       (f.get("title", ""), f.get("author", ""), f.get("description", ""),
                        f.get("status", "unread"),
                        int(f["rating"]) if f.get("rating") else None,
@@ -112,8 +163,7 @@ def create_app():
     def search_cover(bid):
         with db.connect() as c:
             row = c.execute("SELECT title, author FROM books WHERE id=?", (bid,)).fetchone()
-        if not row:
-            abort(404)
+        if not row: abort(404)
         name = enrich.fetch_cover_for(bid, row["title"] or "", row["author"] or "")
         if name:
             with db.connect() as c:
@@ -131,16 +181,14 @@ def create_app():
     def open_book(bid):
         with db.connect() as c:
             row = c.execute("SELECT path FROM books WHERE id=?", (bid,)).fetchone()
-        if row:
-            openers.open_file(row["path"])
+        if row: openers.open_file(row["path"])
         return ("", 204)
 
     @app.route("/book/<int:bid>/reveal", methods=["POST"])
     def reveal_book(bid):
         with db.connect() as c:
             row = c.execute("SELECT path FROM books WHERE id=?", (bid,)).fetchone()
-        if row:
-            openers.reveal(row["path"])
+        if row: openers.reveal(row["path"])
         return ("", 204)
 
     @app.route("/cover/<name>")
@@ -151,17 +199,59 @@ def create_app():
     def missing():
         with db.connect() as c:
             books = [dict(r) for r in c.execute("SELECT * FROM books WHERE missing=1")]
-        return render_template("index.html", books=books, q="", status="", sort="title",
-                               roots=db.roots(), scan=scanner.status(),
-                               enrich=enrich.status(), missing_view=True)
+        return render_template("index.html", books=books, q="", status="", fmt="", shelf="", tag="",
+                               sort="title", roots=db.roots(), scan=scanner.status(),
+                               enrich=enrich.status(), missing_view=True, shelves_with_books=[])
 
     @app.route("/missing/purge", methods=["POST"])
     def purge():
         ids = request.form.getlist("ids")
         with db.connect() as c:
-            for i in ids:
-                c.execute("DELETE FROM books WHERE id=?", (i,))
+            for i in ids: c.execute("DELETE FROM books WHERE id=?", (i,))
         return redirect(url_for("missing"))
+
+    @app.route("/duplicates")
+    def duplicates():
+        groups = db.find_duplicates()
+        return render_template("duplicates.html", groups=groups)
+
+    @app.route("/duplicates/clean", methods=["POST"])
+    def duplicates_clean():
+        """Удаляет все книги, кроме самой заполненной в каждой группе."""
+        groups = db.find_duplicates()
+        removed = 0
+        with db.connect() as c:
+            for g in groups:
+                for b in g["remove"]:
+                    c.execute("DELETE FROM books WHERE id=?", (b["id"],))
+                    removed += 1
+        return redirect(url_for("duplicates", cleaned=removed))
+
+    @app.route("/shelf/move", methods=["POST"])
+    def shelf_move():
+        """Перетаскивание книги на другую полку."""
+        data = request.get_json(force=True)
+        bid = int(data.get("book_id"))
+        shelf = (data.get("shelf") or "").strip()
+        if not shelf:
+            return jsonify({"ok": False, "err": "no shelf"})
+        with db.connect() as c:
+            c.execute("INSERT OR IGNORE INTO shelves(name) VALUES(?)", (shelf,))
+            sid = c.execute("SELECT id FROM shelves WHERE name=?", (shelf,)).fetchone()["id"]
+            c.execute("DELETE FROM book_shelves WHERE book_id=?", (bid,))
+            if shelf != "Без полки":
+                c.execute("INSERT OR IGNORE INTO book_shelves(book_id, shelf_id) VALUES(?,?)", (bid, sid))
+        return jsonify({"ok": True})
+
+    @app.route("/shelf/remove", methods=["POST"])
+    def shelf_remove():
+        bid = int(request.form.get("book_id"))
+        shelf = request.form.get("shelf", "").strip()
+        with db.connect() as c:
+            sid_row = c.execute("SELECT id FROM shelves WHERE name=?", (shelf,)).fetchone()
+            if sid_row:
+                c.execute("DELETE FROM book_shelves WHERE book_id=? AND shelf_id=?", (bid, sid_row["id"]))
+        return redirect(request.referrer or url_for("index"))
 
     return app
 

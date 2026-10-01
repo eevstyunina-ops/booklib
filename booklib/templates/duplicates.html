@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Поиск дубликатов</h2>
+<p>Найдено групп с одинаковыми названием и автором: <b>{{ groups|length }}</b>.
+   При автоматической очистке в каждой группе останется <b>самая заполненная</b> книга — та, у которой больше данных (обложка, оценка, заметки, описание).</p>
+
+{% if request.args.get('cleaned') %}
+  <div class="progress-bar" style="color:#3C8B4D;">Удалено лишних карточек: {{ request.args.get('cleaned') }}.</div>
+{% endif %}
+
+{% if groups %}
+  <form method="post" action="/duplicates/clean" onsubmit="return confirm('Удалить все дубликаты, кроме самой заполненной книги в каждой группе?');">
+    <button class="primary" type="submit">🗑 Оставить самые заполненные, остальные удалить</button>
+  </form>
+  <p style="color:var(--text-muted); font-size:13px; margin-top:8px;">Удаляются только карточки в базе. Сами файлы на диске не трогаются.</p>
+
+  {% for g in groups %}
+    <div class="shelf-block" style="margin-top:28px;">
+      <h3 class="shelf-title">{{ g.keep.title }} <span class="count">{{ g.books|length }} копии</span></h3>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:12px;">
+      {% for b in g.books %}
+        <div class="tile" style="position:relative;">
+          {% if loop.first %}<span class="badge" style="background:#3C8B4D; position:absolute;top:8px;right:8px;">оставить</span>
+          {% else %}<span class="badge" style="background:#C24B4B; position:absolute;top:8px;right:8px;">удалить</span>{% endif %}
+          <div class="cover-wrap" style="aspect-ratio:2/3; margin-bottom:8px;">
+            {% if b.cover %}<img src="/cover/{{b.cover}}">
+            {% else %}<div style="height:100%; background:var(--bg-soft);"></div>{% endif %}
+          </div>
+          <div class="t" style="font-size:13px;">{{ b.title }}</div>
+          <div class="a">{{ b.author }}</div>
+          <div class="a" style="font-size:11px; word-break:break-all;">{{ b.path }}</div>
+          <div class="a" style="font-size:11px;">размер: {{ (b.size/1024)|round(1) }} КБ · {{ b.fmt }}</div>
+        </div>
+      {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="empty">🎉 Дубликатов не найдено.</div>
+{% endif %}
+{% endblock %}

@@ -1,30 +1,297 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="{{ theme }}">
 <head>
 <meta charset="utf-8">
 <title>Библиотека</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; background:#f5f5f7; color:#222; }
-  header { background:#2b2b33; color:#fff; padding:12px 20px; display:flex; gap:16px; align-items:center;}
-  header a { color:#fff; text-decoration:none; }
-  main { padding:20px; max-width:1200px; margin:0 auto; }
-  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:16px; }
-  .tile { background:#fff; border-radius:8px; padding:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); display:flex; flex-direction:column; }
-  .tile img { width:100%; height:220px; object-fit:cover; border-radius:4px; background:#eee;}
-  .tile .t { font-weight:600; margin-top:8px; font-size:14px; line-height:1.2;}
-  .tile .a { color:#666; font-size:12px; margin-top:2px;}
-  .badge { display:inline-block; padding:1px 6px; border-radius:8px; font-size:11px; background:#e6e6ef; margin-top:4px;}
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-  .toolbar input, .toolbar select, .toolbar button { padding:6px 10px; border-radius:6px; border:1px solid #ccc; font-size:14px;}
-  button.primary { background:#3b6ef5; color:#fff; border:none; cursor:pointer;}
+:root, [data-theme="light"] {
+  --bg: #F7F1E7; --bg-card: #FFFFFF; --bg-soft: #F0E8DA;
+  --text: #2B2520; --text-muted: #6E6355;
+  --border: #E2D7C3; --border-strong: #C9B99E;
+  --accent: #8B6F47; --accent-soft: #C9A87C; --accent-hover: #6F5738;
+  --shadow: 0 2px 10px rgba(80,60,30,.08);
+  --wood-dark: #8B6F47; --wood-light: #C9A87C;
+  --header-bg: #2B2520; --header-text: #F7F1E7;
+}
+[data-theme="evening"] {
+  --bg: #16120E; --bg-card: #241D16; --bg-soft: #2E251C;
+  --text: #F0E4D0; --text-muted: #A8998A;
+  --border: #3A3128; --border-strong: #594A38;
+  --accent: #E8B96E; --accent-soft: #B8935A; --accent-hover: #F5CC85;
+  --shadow: 0 2px 14px rgba(0,0,0,.5);
+  --wood-dark: #5A4231; --wood-light: #8B6F47;
+  --header-bg: #0E0A08; --header-text: #F0E4D0;
+}
+[data-theme="pastel"] {
+  --bg: #FDF0F3; --bg-card: #FFFFFF; --bg-soft: #F8E3E8;
+  --text: #3A3540; --text-muted: #8B8394;
+  --border: #F0DCE2; --border-strong: #E4BFC8;
+  --accent: #A8C5E0; --accent-soft: #F5C5CD; --accent-hover: #7FACD0;
+  --shadow: 0 2px 10px rgba(200,150,180,.15);
+  --wood-dark: #C9A8B0; --wood-light: #F5C5CD;
+  --header-bg: #3A3540; --header-text: #FDF0F3;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.45;
+  transition: background .2s, color .2s;
+}
+h1, h2, h3, h4 { font-family: Georgia, 'Playfair Display', 'Literata', 'Times New Roman', serif; font-weight: 600; letter-spacing: -.01em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+header.top {
+  background: var(--header-bg); color: var(--header-text);
+  padding: 12px 24px; display: flex; gap: 16px; align-items: center;
+  box-shadow: 0 1px 0 var(--border);
+}
+header.top a.brand { color: var(--header-text); font-family: Georgia, serif; font-size: 20px; font-weight: 600; }
+header.top a { color: var(--header-text); opacity: .9; }
+header.top a:hover { opacity: 1; color: var(--accent); }
+header.top .spacer { flex: 1; }
+
+.search-mini {
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+  color: var(--header-text); border-radius: 20px; padding: 6px 14px; width: 260px;
+  font-size: 14px;
+}
+.search-mini::placeholder { color: rgba(255,255,255,.5); }
+[data-theme="light"] .search-mini::placeholder,
+[data-theme="pastel"] .search-mini::placeholder { color: rgba(255,255,255,.6); }
+
+.icon-btn {
+  background: rgba(255,255,255,.1); border: none; color: var(--header-text);
+  cursor: pointer; padding: 6px 10px; border-radius: 8px; font-size: 15px;
+}
+.icon-btn:hover { background: rgba(255,255,255,.2); }
+.icon-btn.active { background: var(--accent); color: #fff; }
+
+.layout { display: grid; grid-template-columns: 240px 1fr; gap: 24px; padding: 24px; max-width: 1500px; margin: 0 auto; }
+aside.filters {
+  position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto;
+}
+aside.filters h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-muted); margin: 18px 0 8px;
+}
+aside.filters a.fitem {
+  display: flex; justify-content: space-between; padding: 5px 10px; border-radius: 6px;
+  color: var(--text); font-size: 14px; margin-bottom: 2px;
+}
+aside.filters a.fitem:hover { background: var(--bg-soft); }
+aside.filters a.fitem.active { background: var(--accent); color: #fff; }
+aside.filters .count { color: var(--text-muted); font-size: 12px; }
+aside.filters a.fitem.active .count { color: rgba(255,255,255,.8); }
+aside.filters .clear { font-size: 12px; color: var(--text-muted); margin-top: 6px; display: inline-block; }
+
+main { min-width: 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.toolbar input[type=text], .toolbar input[name=path], .toolbar select {
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+  font-size: 14px; background: var(--bg-card); color: var(--text);
+}
+button, .btn {
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text); cursor: pointer; font-size: 14px;
+  transition: all .15s;
+}
+button:hover, .btn:hover { border-color: var(--accent); color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.primary:hover { background: var(--accent-hover); color: #fff; }
+
+.progress-bar {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 16px; font-size: 14px; color: var(--text-muted);
+}
+
+/* -------- ПЛИТКА (tile) -------- */
+.grid-tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap: 20px; }
+.tile {
+  background: var(--bg-card); border-radius: 10px; padding: 12px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column;
+  transition: transform .15s, box-shadow .15s;
+}
+.tile:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(80,60,30,.15); }
+.tile .cover-wrap {
+  width: 100%; aspect-ratio: 2/3; border-radius: 6px; overflow: hidden;
+  background: var(--bg-soft); box-shadow: inset 0 0 0 1px var(--border);
+  display: flex; align-items: center; justify-content: center;
+}
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile .t {
+  font-family: Georgia, serif; font-weight: 600; font-size: 15px;
+  margin-top: 10px; line-height: 1.25; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tile .a { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+.tile .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.tile .stars { color: #E8B96E; font-size: 12px; letter-spacing: 1px; }
+
+/* -------- КОМПАКТНАЯ СЕТКА -------- */
+.grid-compact { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap: 12px; }
+.grid-compact .tile { padding: 8px; }
+.grid-compact .tile .t { font-size: 12px; margin-top: 6px; -webkit-line-clamp: 2; }
+.grid-compact .tile .a { font-size: 11px; }
+
+/* -------- СПИСОК -------- */
+.list-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+.list-table th { text-align: left; padding: 10px 14px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+.list-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
+.list-table tr:last-child td { border-bottom: none; }
+.list-table tr:hover td { background: var(--bg-soft); }
+.list-table .mini-cover { width: 32px; height: 48px; border-radius: 3px; object-fit: cover; background: var(--bg-soft); }
+
+/* -------- КНИЖНЫЕ ПОЛКИ -------- */
+.shelf-block { margin-bottom: 40px; }
+.shelf-title {
+  font-family: Georgia, serif; font-size: 22px; font-weight: 600;
+  color: var(--text); margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px;
+}
+.shelf-title .count { font-size: 13px; color: var(--text-muted); font-weight: 400; font-family: -apple-system, sans-serif;}
+.shelf-row {
+  display: flex; flex-wrap: wrap; gap: 14px; padding: 18px 20px 26px;
+  background: linear-gradient(180deg, transparent 0%, transparent 60%, rgba(0,0,0,.05) 100%);
+  border-radius: 8px 8px 0 0; position: relative;
+  min-height: 220px; transition: background .2s;
+}
+.shelf-row.dragover { background: rgba(139,111,71,.08); outline: 2px dashed var(--accent-soft); }
+.shelf-plank {
+  height: 18px; background: linear-gradient(180deg, var(--wood-light) 0%, var(--wood-dark) 60%, var(--wood-dark) 100%);
+  border-radius: 0 0 4px 4px; box-shadow: 0 6px 12px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.25);
+  margin-bottom: -10px;
+}
+.book-on-shelf {
+  width: 110px; flex-shrink: 0; cursor: grab; position: relative;
+  transition: transform .15s; text-align: center;
+}
+.book-on-shelf:active { cursor: grabbing; }
+.book-on-shelf:hover { transform: translateY(-4px) scale(1.02); }
+.book-on-shelf.dragging { opacity: .4; }
+.book-on-shelf .cover-wrap {
+  width: 100%; aspect-ratio: 2/3; border-radius: 4px; overflow: hidden;
+  background: var(--bg-soft); box-shadow: 0 3px 8px rgba(0,0,0,.25), inset 0 0 0 1px var(--border);
+}
+.book-on-shelf img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.book-on-shelf .title { font-size: 11px; margin-top: 6px; color: var(--text); line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* -------- КОРЕШОК-ЗАГЛУШКА -------- */
+.spine {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  padding: 12px; text-align: center; position: relative; overflow: hidden;
+}
+.spine-inner {
+  font-family: Georgia, serif; color: rgba(255,255,255,.95);
+  font-size: 13px; font-weight: 600; line-height: 1.15;
+  text-shadow: 0 1px 2px rgba(0,0,0,.25);
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+  word-break: break-word;
+}
+.spine::before, .spine::after {
+  content: ""; position: absolute; left: 8px; right: 8px; height: 1px;
+  background: rgba(255,255,255,.35);
+}
+.spine::before { top: 8px; }
+.spine::after { bottom: 8px; }
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+  background: var(--accent-soft); color: #fff;
+}
+.badge.warn { background: #E8B96E; color: #4A3618; }
+
+.empty { color: var(--text-muted); text-align: center; padding: 40px; }
+
+/* карточка */
+.card-form { display: grid; grid-template-columns: 280px 1fr; gap: 24px; }
+.card-form label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+.card-form input, .card-form select, .card-form textarea {
+  width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text); font-size: 14px; font-family: inherit;
+}
+.card-form input:focus, .card-form textarea:focus, .card-form select:focus {
+  outline: 2px solid var(--accent-soft); border-color: var(--accent);
+}
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+  aside.filters { position: static; max-height: none; }
+}
 </style>
 </head>
 <body>
-<header>
-  <a href="/"><b>📚 Библиотека</b></a>
+<header class="top">
+  <a href="/" class="brand">📚 Библиотека</a>
+  <a href="/duplicates">Дубликаты</a>
   <a href="/missing">Пропавшие</a>
-  <span style="flex:1"></span>
+  <form method="get" action="/" style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+    <input class="search-mini" type="text" name="q" value="{{ request.args.get('q','') }}" placeholder="Поиск по названию или автору">
+  </form>
+
+  <!-- переключатель вида -->
+  <form method="post" action="/prefs" style="display:flex; gap:4px;" id="view-switch">
+    <input type="hidden" name="back" value="{{ request.full_path }}">
+    <input type="hidden" name="theme" value="{{ theme }}">
+    {% for v, icon, title in [('tile','▦','Плитка'),('compact','▩','Компактно'),('list','☰','Список'),('shelves','📚','Полки')] %}
+      <button type="submit" name="view" value="{{ v }}" class="icon-btn {% if view==v %}active{% endif %}" title="{{ title }}">{{ icon }}</button>
+    {% endfor %}
+  </form>
+
+  <!-- переключатель темы -->
+  <form method="post" action="/prefs" style="display:flex; gap:4px;">
+    <input type="hidden" name="back" value="{{ request.full_path }}">
+    <input type="hidden" name="view" value="{{ view }}">
+    {% for t, icon, title in [('light','☀','Светлая'),('evening','🌙','Вечерняя'),('pastel','🌸','Пастель')] %}
+      <button type="submit" name="theme" value="{{ t }}" class="icon-btn {% if theme==t %}active{% endif %}" title="{{ title }}">{{ icon }}</button>
+    {% endfor %}
+  </form>
 </header>
-<main>{% block content %}{% endblock %}</main>
+
+<div class="layout">
+  <aside class="filters">
+    <h4>Статус</h4>
+    {% for s, label in [('unread','Не прочитано'),('reading','Читаю сейчас'),('read','Прочитано'),('postponed','Отложено')] %}
+      <a class="fitem {% if status==s %}active{% endif %}"
+         href="?{% if q %}q={{q}}&{% endif %}{% if fmt %}fmt={{fmt}}&{% endif %}{% if shelf %}shelf={{shelf}}&{% endif %}{% if tag %}tag={{tag}}&{% endif %}status={{s}}&sort={{sort}}">{{ label }}</a>
+    {% endfor %}
+
+    {% if all_shelves %}
+    <h4>Полки</h4>
+    {% for s in all_shelves %}
+      <a class="fitem {% if shelf==s.name %}active{% endif %}"
+         href="?{% if q %}q={{q}}&{% endif %}{% if status %}status={{status}}&{% endif %}{% if fmt %}fmt={{fmt}}&{% endif %}{% if tag %}tag={{tag}}&{% endif %}shelf={{s.name}}&sort={{sort}}">
+        <span>{{ s.name }}</span><span class="count">{{ s.n }}</span>
+      </a>
+    {% endfor %}
+    {% endif %}
+
+    {% if all_tags %}
+    <h4>Теги</h4>
+    {% for t in all_tags %}
+      <a class="fitem {% if tag==t.name %}active{% endif %}"
+         href="?{% if q %}q={{q}}&{% endif %}{% if status %}status={{status}}&{% endif %}{% if fmt %}fmt={{fmt}}&{% endif %}{% if shelf %}shelf={{shelf}}&{% endif %}tag={{t.name}}&sort={{sort}}">
+        <span>{{ t.name }}</span><span class="count">{{ t.n }}</span>
+      </a>
+    {% endfor %}
+    {% endif %}
+
+    {% if all_formats %}
+    <h4>Формат</h4>
+    {% for f in all_formats %}
+      <a class="fitem {% if fmt==f.fmt %}active{% endif %}"
+         href="?{% if q %}q={{q}}&{% endif %}{% if status %}status={{status}}&{% endif %}{% if shelf %}shelf={{shelf}}&{% endif %}{% if tag %}tag={{tag}}&{% endif %}fmt={{f.fmt}}&sort={{sort}}">
+        <span>{{ f.fmt|upper }}</span><span class="count">{{ f.n }}</span>
+      </a>
+    {% endfor %}
+    {% endif %}
+
+    <a href="/" class="clear">✕ Сбросить фильтры</a>
+  </aside>
+
+  <main>{% block content %}{% endblock %}</main>
+</div>
 </body>
 </html>
