@@ -86,11 +86,31 @@ def parse_epub(path: Path):
     except Exception:
         return {}
 
+def parse_mobi(path: Path):
+    """MOBI и AZW3 — извлекаем через библиотеку mobi, дальше как EPUB."""
+    try:
+        import mobi
+        tempdir, filepath = mobi.extract(str(path))
+        extracted = Path(filepath)
+        if extracted.suffix.lower() == ".epub":
+            return parse_epub(extracted)
+        elif extracted.suffix.lower() in (".html", ".htm"):
+            # Простой парс HTML — вытаскиваем <title> и автора из <meta>
+            txt = extracted.read_text(errors="ignore")
+            title = ""
+            author = ""
+            m = re.search(r"<title[^>]*>(.+?)</title>", txt, re.I | re.S)
+            if m:
+                title = re.sub(r"\s+", " ", m.group(1)).strip()
+            m = re.search(r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']+)', txt, re.I)
+            if m:
+                author = m.group(1).strip()
+            return {"title": title, "author": author, "description": ""}
+    except Exception:
+        pass
+    return {}
+
 def parse_pdf(path: Path):
-    """
-    Пытается вытащить метаданные из PDF.
-    Сначала из /Title и /Author, потом — из текста первой страницы (эвристика).
-    """
     result = {"title": "", "author": "", "description": ""}
     try:
         from pypdf import PdfReader
@@ -106,19 +126,15 @@ def parse_pdf(path: Path):
             except Exception:
                 first = ""
             lines = [l.strip() for l in first.split("\n") if l.strip()]
-            # Отбрасываем строки похожие на колонтитулы
             cleaned = [l for l in lines if len(l) > 2 and not re.match(r"^(Page|Стр|Страница|\d+)[\s\d]*$", l)]
             if not result["title"] and cleaned:
-                # Название часто в первых 3 строках и в верхнем регистре или крупным шрифтом
                 for cand in cleaned[:3]:
                     if 5 < len(cand) < 150:
                         result["title"] = cand
                         break
             if not result["author"] and len(cleaned) > 1:
-                # Автор — часто в первых 6 строках, 5-50 символов, без цифр
                 for cand in cleaned[1:6]:
                     if 4 < len(cand) < 60 and not any(c.isdigit() for c in cand):
-                        # Отбрасываем строки похожие на названия серий/издательств
                         if not re.search(r"(издатель|press|book|library|www\.|http)", cand, re.I):
                             result["author"] = cand
                             break
@@ -126,22 +142,55 @@ def parse_pdf(path: Path):
         pass
     return result
 
+# -------- извлечение из имени файла и папок --------
 NAME_PATTERNS = [
     re.compile(r"^(?P<author>[^—\-–]+?)\s*[—–-]\s*(?P<title>.+)$"),
     re.compile(r"^(?P<author>[^—\-–]+?)\s*\.\s+(?P<title>.+)$"),
 ]
 
+def _parse_name(name: str):
+    """Пытается разобрать строку 'Автор - Название' или 'Автор. Название'."""
+    name = name.replace("_", " ").strip()
+    for p in NAME_PATTERNS:
+        m = p.match(name)
+        if m:
+            a = m.group("author").strip()
+            t = m.group("title").strip()
+            # Отбрасываем «ложных авторов»: слишком длинные, с цифрами, со словами типа «видео»
+            if 2 < len(a) < 60 and not re.search(r"[0-9]{3,}", a) and not re.search(r"(видео|уроки|лекц|курс)", a, re.I):
+                return {"author": a, "title": t}
+    return {}
+
 def from_filename(path: Path):
+    """
+    Извлекает название/автора из имени файла и родительских папок.
+    Сначала пробуем имя файла, потом — названия папок.
+    """
     stem = path.stem
     if stem.lower().endswith(".fb2"):
         stem = stem[:-4]
     stem = stem.replace("_", " ").strip()
-    for p in NAME_PATTERNS:
-        m = p.match(stem)
-        if m:
-            return {"author": m.group("author").strip(),
-                    "title": m.group("title").strip()}
-    return {"title": stem, "author": ""}
+
+    # 1. имя файла
+    parsed = _parse_name(stem)
+    if parsed.get("author") and parsed.get("title"):
+        return parsed
+
+    # 2. если в имени файла только название — берём как title
+    title_from_file = parsed.get("title") or stem
+
+    # 3. смотрим родительские папки на предмет "Автор - Название"
+    for parent in path.parents:
+        if not parent.name or parent == parent.parent:
+            break
+        # пропускаем очевидно системные папки
+        if parent.name in ("VIDEO", "ВИДЕО", "BOOKS", "КНИГИ"):
+            continue
+        p2 = _parse_name(parent.name)
+        if p2.get("author"):
+            return {"author": p2["author"], "title": title_from_file or p2.get("title", "")}
+
+    return {"title": title_from_file, "author": ""}
 
 def extract(path: Path):
     ext = path.suffix.lower()
@@ -149,14 +198,17 @@ def extract(path: Path):
         data = parse_fb2(path)
     elif ext == ".epub":
         data = parse_epub(path)
+    elif ext in (".mobi", ".azw3"):
+        data = parse_mobi(path)
     elif ext == ".pdf":
         data = parse_pdf(path)
     else:
         data = {}
-    # если чего-то не хватает — добираем из имени файла
+
     if not data.get("title") or not data.get("author"):
         fb = from_filename(path)
         data["title"]  = data.get("title")  or fb["title"]
         data["author"] = data.get("author") or fb["author"]
+
     data["needs_review"] = 0 if (data.get("title") and data.get("author")) else 1
     return data

@@ -1,9 +1,12 @@
-import json, time, threading
+import json, re, time, threading
 import requests
 from .config import ENRICH_DELAY, OFFLINE, COVERS_DIR
 from . import db
 
 _state = {"running": False, "done": 0, "total": 0, "mode": "", "current": ""}
+
+STOPWORDS = {"и","в","на","с","по","для","от","до","из","к","о","у","за","под",
+             "the","a","an","of","and","to","in","on","for"}
 
 def status():
     return dict(_state)
@@ -20,7 +23,6 @@ def enrich_async(reset=False):
 
 def _run():
     try:
-        # ВАЖНО: берём и книги «требует проверки» — если есть хоть какое-то название, ищем обложку.
         with db.connect() as c:
             rows = c.execute("""SELECT id, title, author, cover FROM books
                                 WHERE missing=0
@@ -55,6 +57,165 @@ def _run():
         _state["running"] = False
         _state["current"] = ""
 
+# ---------- проверки ----------
+
+def _is_garbage_title(title: str) -> bool:
+    """Отсеиваем «мусорные» названия, по которым нет смысла искать."""
+    t = (title or "").strip()
+    if len(t) < 4:
+        return True
+    if t.isdigit():
+        return True
+    # что-то вида "-ASS~1", "03 27136"
+    if re.match(r"^[^A-Za-zА-Яа-яЁё]+$", t):
+        return True
+    if re.match(r"^\d+\s+\w{1,6}$", t):
+        return True
+    if re.fullmatch(r"[A-Za-z]{1,3}", t):
+        return True
+    return False
+
+def _tokens(s: str):
+    return set(re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", (s or "").lower())) - STOPWORDS
+
+def _title_matches(query: str, found: str) -> bool:
+    """Проверяет, что найденное название хоть как-то совпадает с запросом."""
+    qt = _tokens(query)
+    ft = _tokens(found)
+    if not qt or not ft:
+        return False
+    common = qt & ft
+    # Если хотя бы одно значимое слово совпало, или одно слово — подстрока другого
+    if common:
+        return True
+    for q in qt:
+        for f in ft:
+            if len(q) >= 4 and (q in f or f in q):
+                return True
+    return False
+
+def _expand_title(title: str):
+    """Дополнительные варианты названия: 7 → Семь, 3 → Три."""
+    mapping = {"7": "Семь", "3": "Три", "5": "Пять", "100": "Сто", "2": "Два"}
+    m = re.match(r"^(\d+)\s+(.+)$", title)
+    if m:
+        num, rest = m.group(1), m.group(2)
+        if num in mapping:
+            yield mapping[num] + " " + rest
+    yield title
+
+# ---------- поиск обложки ----------
+
+def fetch_cover_for(book_id, title, author):
+    if _is_garbage_title(title):
+        return None
+
+    queries = []
+    title_variants = list(_expand_title(title))
+    for tv in title_variants:
+        if author:
+            queries.append(f"{tv} {author}".strip())
+            queries.append(f"{author} {tv}".strip())
+        queries.append(tv)
+    # дополнительный вариант без лишних слов
+    short = re.split(r"[:(]", title)[0].strip()
+    if short and short != title:
+        if author:
+            queries.append(f"{short} {author}".strip())
+        queries.append(short)
+
+    queries = list(dict.fromkeys(q for q in queries if q))
+
+    # 1. ЛитРес — для русских книг в первую очередь
+    for q in queries:
+        name = _from_litres(book_id, q, title)
+        if name:
+            return name
+
+    # 2. Open Library
+    for q in queries:
+        name = _from_openlibrary(book_id, q, title)
+        if name:
+            return name
+
+    # 3. Google Books
+    for q in queries:
+        name = _from_google(book_id, q, title)
+        if name:
+            return name
+
+    return None
+
+def _from_litres(book_id, query, original_title):
+    """ЛитРес — русские книги с качественными обложками."""
+    try:
+        url = "https://www.litres.ru/search/"
+        r = requests.get(url, params={"q": query}, timeout=12,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        if not r.ok:
+            return None
+        html = r.text
+        # Ищем блоки с обложками и названиями
+        # у ЛитРес обложки лежат на cdn.litres.ru/pub/c/cover_200/...
+        pattern = re.compile(
+            r'<img[^>]+src="(https://cdn\.litres\.ru/pub/c/[^"]+?\.(?:jpg|jpeg|png))"[^>]*>',
+            re.I
+        )
+        # Также пытаемся вытащить названия для проверки
+        title_pattern = re.compile(r'<a[^>]+class="[^"]*art__title[^"]*"[^>]*>([^<]+)</a>', re.I)
+
+        covers = pattern.findall(html)
+        titles = [re.sub(r"\s+", " ", t).strip() for t in title_pattern.findall(html)]
+
+        for i, cover_url in enumerate(covers[:6]):
+            found_title = titles[i] if i < len(titles) else original_title
+            if _title_matches(original_title, found_title):
+                name = _download_cover(book_id, cover_url)
+                if name:
+                    return name
+    except Exception:
+        pass
+    return None
+
+def _from_openlibrary(book_id, query, original_title):
+    try:
+        r = requests.get("https://openlibrary.org/search.json",
+                         params={"q": query, "limit": 5, "fields": "cover_i,title,author_name"},
+                         timeout=10)
+        if r.ok:
+            for d in r.json().get("docs", []):
+                cid = d.get("cover_i")
+                found_title = d.get("title", "")
+                if cid and _title_matches(original_title, found_title):
+                    name = _download_cover(book_id, f"https://covers.openlibrary.org/b/id/{cid}-L.jpg")
+                    if name:
+                        return name
+    except Exception:
+        pass
+    return None
+
+def _from_google(book_id, query, original_title):
+    try:
+        r = requests.get("https://www.googleapis.com/books/v1/volumes",
+                         params={"q": query, "maxResults": 8}, timeout=10)
+        if not r.ok:
+            return None
+        for item in r.json().get("items", []):
+            vi = item.get("volumeInfo", {})
+            found_title = vi.get("title", "")
+            if not _title_matches(original_title, found_title):
+                continue
+            imgs = vi.get("imageLinks") or {}
+            url = (imgs.get("extraLarge") or imgs.get("large")
+                   or imgs.get("medium") or imgs.get("thumbnail"))
+            if url:
+                name = _download_cover(book_id, url)
+                if name:
+                    return name
+    except Exception:
+        pass
+    return None
+
 def _download_cover(book_id, url):
     try:
         if url.startswith("http://"):
@@ -77,51 +238,7 @@ def _download_cover(book_id, url):
     except Exception:
         return None
 
-def fetch_cover_for(book_id, title, author):
-    if not title:
-        return None
-    # Убираем шум из «названий» типа «03 27136»
-    clean_title = title.strip()
-    if len(clean_title) < 3 or all(c.isdigit() or c.isspace() for c in clean_title):
-        return None
-    queries = []
-    if author:
-        queries.append(f"{clean_title} {author}".strip())
-        queries.append(f"{author} {clean_title}".strip())
-    queries.append(clean_title)
-    # Open Library
-    for q in queries:
-        try:
-            r = requests.get("https://openlibrary.org/search.json",
-                             params={"q": q, "limit": 5, "fields": "cover_i,title,author_name"},
-                             timeout=10)
-            if r.ok:
-                for d in r.json().get("docs", []):
-                    cid = d.get("cover_i")
-                    if cid:
-                        name = _download_cover(book_id, f"https://covers.openlibrary.org/b/id/{cid}-L.jpg")
-                        if name:
-                            return name
-        except Exception:
-            pass
-    # Google Books
-    for q in queries:
-        try:
-            r = requests.get("https://www.googleapis.com/books/v1/volumes",
-                             params={"q": q, "maxResults": 5}, timeout=10)
-            if r.ok:
-                for item in r.json().get("items", []):
-                    vi = item.get("volumeInfo", {})
-                    imgs = vi.get("imageLinks") or {}
-                    url = (imgs.get("extraLarge") or imgs.get("large")
-                           or imgs.get("medium") or imgs.get("thumbnail"))
-                    if url:
-                        name = _download_cover(book_id, url)
-                        if name:
-                            return name
-        except Exception:
-            pass
-    return None
+# ---------- описание ----------
 
 def _cache_get(q):
     with db.connect() as c:
@@ -134,6 +251,8 @@ def _cache_put(q, payload):
                   (q, json.dumps(payload, ensure_ascii=False)))
 
 def _lookup(title, author):
+    if _is_garbage_title(title):
+        return {}
     q = f"{title} {author}".strip()
     cached = _cache_get(q)
     if cached is not None:
@@ -146,28 +265,11 @@ def _lookup(title, author):
             items = r.json().get("items") or []
             if items:
                 vi = items[0]["volumeInfo"]
-                imgs = vi.get("imageLinks") or {}
-                cover_url = (imgs.get("extraLarge") or imgs.get("large")
-                             or imgs.get("medium") or imgs.get("thumbnail"))
-                result = {"description": vi.get("description", ""),
-                          "title": vi.get("title"),
-                          "authors": vi.get("authors"),
-                          "cover_url": cover_url}
+                if _title_matches(title, vi.get("title", "")):
+                    result = {"description": vi.get("description", ""),
+                              "title": vi.get("title"),
+                              "authors": vi.get("authors")}
     except Exception:
         pass
-    if not result:
-        try:
-            r = requests.get("https://openlibrary.org/search.json",
-                             params={"q": q, "limit": 1}, timeout=10)
-            if r.ok:
-                docs = r.json().get("docs") or []
-                if docs:
-                    d = docs[0]
-                    cid = d.get("cover_i")
-                    result = {"title": d.get("title"),
-                              "authors": d.get("author_name"),
-                              "cover_url": f"https://covers.openlibrary.org/b/id/{cid}-L.jpg" if cid else None}
-        except Exception:
-            pass
     _cache_put(q, result)
     return result
