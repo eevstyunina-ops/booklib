@@ -87,15 +87,44 @@ def parse_epub(path: Path):
         return {}
 
 def parse_pdf(path: Path):
+    """
+    Пытается вытащить метаданные из PDF.
+    Сначала из /Title и /Author, потом — из текста первой страницы (эвристика).
+    """
+    result = {"title": "", "author": "", "description": ""}
     try:
         from pypdf import PdfReader
         r = PdfReader(str(path))
         meta = r.metadata or {}
-        return {"title": (meta.get("/Title") or "").strip(),
-                "author": (meta.get("/Author") or "").strip(),
-                "description": (meta.get("/Subject") or "").strip()}
+        result["title"]  = (meta.get("/Title")  or "").strip()
+        result["author"] = (meta.get("/Author") or "").strip()
+        result["description"] = (meta.get("/Subject") or "").strip()
+
+        if not result["title"] or not result["author"]:
+            try:
+                first = r.pages[0].extract_text() or ""
+            except Exception:
+                first = ""
+            lines = [l.strip() for l in first.split("\n") if l.strip()]
+            # Отбрасываем строки похожие на колонтитулы
+            cleaned = [l for l in lines if len(l) > 2 and not re.match(r"^(Page|Стр|Страница|\d+)[\s\d]*$", l)]
+            if not result["title"] and cleaned:
+                # Название часто в первых 3 строках и в верхнем регистре или крупным шрифтом
+                for cand in cleaned[:3]:
+                    if 5 < len(cand) < 150:
+                        result["title"] = cand
+                        break
+            if not result["author"] and len(cleaned) > 1:
+                # Автор — часто в первых 6 строках, 5-50 символов, без цифр
+                for cand in cleaned[1:6]:
+                    if 4 < len(cand) < 60 and not any(c.isdigit() for c in cand):
+                        # Отбрасываем строки похожие на названия серий/издательств
+                        if not re.search(r"(издатель|press|book|library|www\.|http)", cand, re.I):
+                            result["author"] = cand
+                            break
     except Exception:
-        return {}
+        pass
+    return result
 
 NAME_PATTERNS = [
     re.compile(r"^(?P<author>[^—\-–]+?)\s*[—–-]\s*(?P<title>.+)$"),
@@ -124,9 +153,10 @@ def extract(path: Path):
         data = parse_pdf(path)
     else:
         data = {}
+    # если чего-то не хватает — добираем из имени файла
     if not data.get("title") or not data.get("author"):
         fb = from_filename(path)
-        data["title"] = data.get("title") or fb["title"]
+        data["title"]  = data.get("title")  or fb["title"]
         data["author"] = data.get("author") or fb["author"]
     data["needs_review"] = 0 if (data.get("title") and data.get("author")) else 1
     return data

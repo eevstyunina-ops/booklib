@@ -3,7 +3,7 @@ import requests
 from .config import ENRICH_DELAY, OFFLINE, COVERS_DIR
 from . import db
 
-_state = {"running": False, "done": 0, "total": 0, "mode": ""}
+_state = {"running": False, "done": 0, "total": 0, "mode": "", "current": ""}
 
 def status():
     return dict(_state)
@@ -14,27 +14,29 @@ def enrich_async(reset=False):
     if reset:
         with db.connect() as c:
             c.execute("UPDATE books SET enriched=0, cover_checked=0")
-    _state.update(running=True, done=0, total=0, mode="enrich")
+    _state.update(running=True, done=0, total=0, mode="enrich", current="")
     threading.Thread(target=_run, daemon=True).start()
     return True
 
 def _run():
     try:
+        # ВАЖНО: берём и книги «требует проверки» — если есть хоть какое-то название, ищем обложку.
         with db.connect() as c:
             rows = c.execute("""SELECT id, title, author, cover FROM books
-                                WHERE missing=0 AND title != '' AND needs_review=0
+                                WHERE missing=0
+                                  AND title IS NOT NULL AND title != ''
                                   AND (enriched=0 OR (cover IS NULL AND cover_checked=0))""").fetchall()
         _state["total"] = len(rows)
         for r in rows:
+            _state["current"] = f"{r['title']}"
             try:
                 info = _lookup(r["title"], r["author"])
                 cover_name = None
                 if not r["cover"]:
-                    # сначала пробуем URL из метаданных, потом сами ищем
                     if info and info.get("cover_url"):
                         cover_name = _download_cover(r["id"], info["cover_url"])
                     if not cover_name:
-                        cover_name = fetch_cover_for(r["id"], r["title"], r["author"])
+                        cover_name = fetch_cover_for(r["id"], r["title"], r["author"] or "")
                 with db.connect() as c:
                     if info:
                         c.execute("""UPDATE books
@@ -51,12 +53,12 @@ def _run():
             time.sleep(ENRICH_DELAY)
     finally:
         _state["running"] = False
+        _state["current"] = ""
 
 def _download_cover(book_id, url):
     try:
         if url.startswith("http://"):
             url = "https://" + url[len("http://"):]
-        # Гугл отдаёт обложки через свои прокси — снимаем параметры сжатия
         if "books.google" in url:
             url = url.split("&edge=")[0].split("&zoom=")[0]
         r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
@@ -76,14 +78,17 @@ def _download_cover(book_id, url):
         return None
 
 def fetch_cover_for(book_id, title, author):
-    """Публичная функция: ищет обложку по одному названию/автору, без кэша."""
     if not title:
+        return None
+    # Убираем шум из «названий» типа «03 27136»
+    clean_title = title.strip()
+    if len(clean_title) < 3 or all(c.isdigit() or c.isspace() for c in clean_title):
         return None
     queries = []
     if author:
-        queries.append(f"{title} {author}")
-        queries.append(f"{author} {title}")
-    queries.append(title)
+        queries.append(f"{clean_title} {author}".strip())
+        queries.append(f"{author} {clean_title}".strip())
+    queries.append(clean_title)
     # Open Library
     for q in queries:
         try:

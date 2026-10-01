@@ -1,42 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
-<a href="/">← Назад к каталогу</a>
+<a href="/" style="display:inline-block;margin-bottom:12px;">← Назад к каталогу</a>
 <h1>{{ book.title or '(без названия)' }}</h1>
-<p style="color:#555;">{{ book.author }}</p>
+<p style="color:var(--text-muted); margin-top:-8px;">{{ book.author or '—' }}</p>
 
 {% if cover_msg %}
-  <div style="padding:8px 12px;background:#fff3cd;border-radius:6px;margin:8px 0;font-size:14px;">
+  <div style="padding:10px 14px;background:var(--bg-overlay);border-left:4px solid var(--accent);border-radius:6px;margin:12px 0;font-size:14px;">
     {{ cover_msg }}
   </div>
 {% endif %}
 
 <div style="display:flex;gap:16px;margin:16px 0;flex-wrap:wrap;">
-  <button class="primary" onclick="fetch('/book/{{book.id}}/open',{method:'POST'})">Открыть файл</button>
-  <button onclick="fetch('/book/{{book.id}}/reveal',{method:'POST'})">Показать в папке</button>
+  <button class="primary" onclick="fetch('/book/{{book.id}}/open',{method:'POST'})">📖 Открыть файл</button>
+  <button onclick="fetch('/book/{{book.id}}/reveal',{method:'POST'})">📁 Показать в папке</button>
   {% for label, url in links %}
-    <a href="{{url}}" target="_blank" rel="noopener"><button>{{label}}</button></a>
+    <a href="{{url}}" target="_blank" rel="noopener"><button>🔗 {{label}}</button></a>
   {% endfor %}
 </div>
 
-<div style="display:grid;grid-template-columns:260px 1fr;gap:20px;">
+<div style="display:grid;grid-template-columns:280px 1fr;gap:24px;">
   <div>
     {% if book.cover %}
-      <img src="/cover/{{book.cover}}" style="width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);">
+      <img src="/cover/{{book.cover}}" style="width:100%;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.2);">
     {% else %}
-      <div style="height:360px;background:linear-gradient(135deg,#E8C4C8 0%,#D4B5B8 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:Georgia,serif;">
-        <div style="text-align:center;padding:20px;">
-          <div style="font-size:48px;opacity:.6;">📖</div>
-          <div style="margin-top:8px;font-size:13px;opacity:.85;">обложки нет</div>
+      {% set c = spine_colors[book.id % spine_colors|length] %}
+      <div style="height:380px;background:linear-gradient(135deg,{{c[0]}} 0%,{{c[1]}} 100%);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;color:#fff;padding:20px;text-align:center;">
+        <div>
+          <div style="font-size:42px;opacity:.6;">📖</div>
+          <div style="margin-top:10px;font-family:Georgia,serif;font-size:16px;text-shadow:0 1px 2px rgba(0,0,0,.3);">
+            {{ book.title or 'Без названия' }}
+          </div>
+          <div style="font-size:12px;opacity:.85;margin-top:6px;">{{ book.author }}</div>
         </div>
       </div>
     {% endif %}
 
-    <form method="post" action="/book/{{book.id}}/cover/search" style="margin-top:10px;">
-      <button type="submit" style="width:100%;padding:6px;">🔍 Найти обложку в интернете</button>
+    <form method="post" action="/book/{{book.id}}/cover/search" style="margin-top:12px;">
+      <button type="submit" style="width:100%;padding:8px;">🔍 Найти обложку в интернете</button>
     </form>
 
     <form method="post" action="/book/{{book.id}}/cover/upload" enctype="multipart/form-data" style="margin-top:6px;">
-      <label style="display:block;font-size:12px;cursor:pointer;padding:6px;text-align:center;background:#f0f0f5;border-radius:6px;">
+      <label style="display:block;cursor:pointer;padding:8px;text-align:center;background:var(--bg-soft);border-radius:8px;font-size:13px;">
         ⬆ Загрузить свою картинку
         <input type="file" name="cover" accept="image/*" onchange="this.form.submit()" style="display:none;">
       </label>
@@ -49,7 +53,7 @@
     {% endif %}
   </div>
 
-  <form method="post" action="/book/{{book.id}}/update" style="display:flex;flex-direction:column;gap:10px;">
+  <form method="post" action="/book/{{book.id}}/update" class="card-form" style="display:flex;flex-direction:column;gap:10px;">
     <label>Название <input name="title" value="{{ book.title }}" style="width:100%"></label>
     <label>Автор    <input name="author" value="{{ book.author }}" style="width:100%"></label>
     <label>Статус
@@ -75,15 +79,25 @@
     <label>Заметки
       <textarea name="notes" rows="5" style="width:100%">{{ book.notes or '' }}</textarea>
     </label>
-    <div><button class="primary" type="submit">Сохранить</button></div>
+    <div><button class="primary" type="submit">💾 Сохранить</button></div>
   </form>
 </div>
 
-<details style="margin-top:24px;">
-  <summary style="cursor:pointer;">Техническая информация</summary>
-  <p style="font-size:13px;color:#555;">
-    Путь: {{ book.path }}<br>
-    Формат: {{ book.fmt }} · Размер: {{ book.size }} · Отпечаток: {{ book.fingerprint }}
+<details style="margin-top:24px; background:var(--bg-overlay); padding:12px 16px; border-radius:8px;">
+  <summary style="cursor:pointer; font-weight:600;">Техническая информация</summary>
+  <table style="font-size:13px; color:var(--text-muted); margin-top:10px; border-collapse:collapse;">
+    <tr><td style="padding:3px 10px 3px 0;">Название в базе:</td><td>{{ book.title or '—' }}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Автор в базе:</td><td>{{ book.author or '—' }}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Путь к файлу:</td><td style="word-break:break-all;">{{ book.path }}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Формат:</td><td>{{ book.fmt }}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Размер:</td><td>{{ (book.size/1024)|round(1) }} КБ</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Отпечаток:</td><td style="font-family:monospace;font-size:11px;">{{ book.fingerprint }}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Проверить вручную:</td><td>{% if book.needs_review %}да{% else %}нет{% endif %}</td></tr>
+    <tr><td style="padding:3px 10px 3px 0;">Обложка найдена:</td><td>{% if book.cover %}да{% else %}нет{% endif %}</td></tr>
+  </table>
+  <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
+    Если название и автор заполнены неверно — поправьте их выше и нажмите «Сохранить».<br>
+    Затем нажмите «🔍 Найти обложку в интернете» — поиск пойдёт уже по новым данным.
   </p>
 </details>
 {% endblock %}

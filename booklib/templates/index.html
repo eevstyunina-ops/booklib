@@ -14,7 +14,7 @@
 {% if scan.running or enrich.running %}
 <div class="progress-bar" id="progress">
   {% if scan.running %}📖 Сканирование: {{scan.done}} / {{scan.total}}{% endif %}
-  {% if enrich.running %} 🔍 Поиск обложек: {{enrich.done}} / {{enrich.total}}{% endif %}
+  {% if enrich.running %} 🔍 Поиск обложек: {{enrich.done}} / {{enrich.total}} — {{enrich.current}}{% endif %}
 </div>
 <script>
 setInterval(async () => {
@@ -22,7 +22,7 @@ setInterval(async () => {
   const el = document.getElementById('progress'); if (!el) return;
   let s = '';
   if (j.scan.running) s += `📖 Сканирование: ${j.scan.done} / ${j.scan.total}`;
-  if (j.enrich.running) s += ` 🔍 Поиск обложек: ${j.enrich.done} / ${j.enrich.total}`;
+  if (j.enrich.running) s += ` 🔍 Поиск обложек: ${j.enrich.done} / ${j.enrich.total} — ${j.enrich.current || ''}`;
   if (!s) { location.reload(); return; }
   el.textContent = s;
 }, 1500);
@@ -134,7 +134,7 @@ setInterval(async () => {
       <h3 class="shelf-title">{{ shelf.name }} <span class="count">{{ shelf.books|length }} книг</span></h3>
       <div class="shelf-row" data-shelf="{{ shelf.name }}">
         {% for b in shelf.books %}
-          <div class="book-on-shelf" draggable="true" data-book-id="{{ b.id }}" onclick="if(!this.dataset.dragged)location.href='/book/{{b.id}}'">
+          <div class="book-on-shelf" draggable="true" data-book-id="{{ b.id }}" data-href="/book/{{b.id}}">
             <div class="cover-wrap">
               {% if b.cover %}<img src="/cover/{{b.cover}}" alt="">
               {% else %}{% set c = spine_colors[b.id % spine_colors|length] %}
@@ -154,31 +154,53 @@ setInterval(async () => {
   <script>
   (function(){
     let dragging = null;
+    let dragJustHappened = false;
+
     document.querySelectorAll('.book-on-shelf').forEach(el => {
       el.addEventListener('dragstart', e => {
-        dragging = el; el.classList.add('dragging');
+        dragging = el;
+        el.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
-        setTimeout(()=>{ el.dataset.dragged = "1"; }, 0);
+        // Firefox без этого не начинает drag
+        try { e.dataTransfer.setData('text/plain', el.dataset.bookId); } catch(_) {}
+        dragJustHappened = true;
       });
       el.addEventListener('dragend', () => {
-        el.classList.remove('dragging');
-        delete el.dataset.dragged;
+        if (dragging) dragging.classList.remove('dragging');
         dragging = null;
+        setTimeout(() => { dragJustHappened = false; }, 80);
+      });
+      el.addEventListener('click', e => {
+        if (dragJustHappened) { e.preventDefault(); e.stopPropagation(); return; }
+        location.href = el.dataset.href;
       });
     });
+
     document.querySelectorAll('.shelf-row').forEach(row => {
-      row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('dragover'); });
-      row.addEventListener('dragleave', () => row.classList.remove('dragover'));
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('dragover');
+      });
+      row.addEventListener('dragleave', e => {
+        // не убирать подсветку, если ушли на дочерний элемент
+        if (!row.contains(e.relatedTarget)) row.classList.remove('dragover');
+      });
       row.addEventListener('drop', async e => {
-        e.preventDefault(); row.classList.remove('dragover');
+        e.preventDefault();
+        row.classList.remove('dragover');
         if (!dragging) return;
         const bid = dragging.dataset.bookId;
         const shelf = row.dataset.shelf;
-        await fetch('/shelf/move', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({book_id: bid, shelf: shelf})
-        });
-        location.reload();
+        try {
+          const resp = await fetch('/shelf/move', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({book_id: bid, shelf: shelf})
+          });
+          const j = await resp.json();
+          if (j.ok) location.reload();
+          else alert('Не удалось переместить: ' + (j.err || 'ошибка'));
+        } catch(err) { alert('Ошибка сети: ' + err); }
       });
     });
   })();

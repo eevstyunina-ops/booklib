@@ -13,6 +13,7 @@
   --shadow: 0 2px 10px rgba(80,60,30,.08);
   --wood-dark: #8B6F47; --wood-light: #C9A87C;
   --header-bg: #2B2520; --header-text: #F7F1E7;
+  --bg-overlay: rgba(247,241,231,.72);
 }
 [data-theme="evening"] {
   --bg: #16120E; --bg-card: #241D16; --bg-soft: #2E251C;
@@ -22,6 +23,7 @@
   --shadow: 0 2px 14px rgba(0,0,0,.5);
   --wood-dark: #5A4231; --wood-light: #8B6F47;
   --header-bg: #0E0A08; --header-text: #F0E4D0;
+  --bg-overlay: rgba(22,18,14,.78);
 }
 [data-theme="pastel"] {
   --bg: #FDF0F3; --bg-card: #FFFFFF; --bg-soft: #F8E3E8;
@@ -31,15 +33,51 @@
   --shadow: 0 2px 10px rgba(200,150,180,.15);
   --wood-dark: #C9A8B0; --wood-light: #F5C5CD;
   --header-bg: #3A3540; --header-text: #FDF0F3;
+  --bg-overlay: rgba(253,240,243,.78);
 }
 
 * { box-sizing: border-box; }
+html, body { min-height: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
+  margin: 0; color: var(--text);
   font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
   font-size: 15px; line-height: 1.45;
-  transition: background .2s, color .2s;
+  transition: background .3s, color .2s;
+  background: var(--bg);  /* fallback */
 }
+/* Атмосферный «библиотечный» фон поверх базового цвета */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(255,200,120,.18) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(200,140,80,.14) 0%, transparent 60%),
+    repeating-linear-gradient(90deg,
+      transparent 0px, transparent 60px,
+      rgba(80,55,30,.035) 60px, rgba(80,55,30,.035) 62px),
+    repeating-linear-gradient(180deg,
+      transparent 0px, transparent 110px,
+      rgba(80,55,30,.04) 110px, rgba(80,55,30,.04) 112px),
+    var(--bg);
+}
+[data-theme="evening"] body::before {
+  background:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(255,180,90,.10) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(200,120,60,.08) 0%, transparent 60%),
+    repeating-linear-gradient(90deg,
+      transparent 0px, transparent 60px,
+      rgba(255,200,120,.03) 60px, rgba(255,200,120,.03) 62px),
+    var(--bg);
+}
+[data-theme="pastel"] body::before {
+  background:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(255,200,220,.30) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(180,210,240,.24) 0%, transparent 60%),
+    repeating-linear-gradient(90deg,
+      transparent 0px, transparent 60px,
+      rgba(180,140,200,.04) 60px, rgba(180,140,200,.04) 62px),
+    var(--bg);
+}
+
 h1, h2, h3, h4 { font-family: Georgia, 'Playfair Display', 'Literata', 'Times New Roman', serif; font-weight: 600; letter-spacing: -.01em; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
@@ -59,9 +97,7 @@ header.top .spacer { flex: 1; }
   color: var(--header-text); border-radius: 20px; padding: 6px 14px; width: 260px;
   font-size: 14px;
 }
-.search-mini::placeholder { color: rgba(255,255,255,.5); }
-[data-theme="light"] .search-mini::placeholder,
-[data-theme="pastel"] .search-mini::placeholder { color: rgba(255,255,255,.6); }
+.search-mini::placeholder { color: rgba(255,255,255,.55); }
 
 .icon-btn {
   background: rgba(255,255,255,.1); border: none; color: var(--header-text);
@@ -73,6 +109,7 @@ header.top .spacer { flex: 1; }
 .layout { display: grid; grid-template-columns: 240px 1fr; gap: 24px; padding: 24px; max-width: 1500px; margin: 0 auto; }
 aside.filters {
   position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto;
+  background: var(--bg-overlay); backdrop-filter: blur(4px); border-radius: 10px; padding: 4px 10px;
 }
 aside.filters h4 {
   font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
@@ -86,7 +123,7 @@ aside.filters a.fitem:hover { background: var(--bg-soft); }
 aside.filters a.fitem.active { background: var(--accent); color: #fff; }
 aside.filters .count { color: var(--text-muted); font-size: 12px; }
 aside.filters a.fitem.active .count { color: rgba(255,255,255,.8); }
-aside.filters .clear { font-size: 12px; color: var(--text-muted); margin-top: 6px; display: inline-block; }
+aside.filters .clear { font-size: 12px; color: var(--text-muted); margin: 12px 0 8px; display: inline-block; }
 
 main { min-width: 0; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
@@ -104,11 +141,11 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 button.primary:hover { background: var(--accent-hover); color: #fff; }
 
 .progress-bar {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 10px 14px; margin-bottom: 16px; font-size: 14px; color: var(--text-muted);
+  background: var(--bg-overlay); backdrop-filter: blur(4px);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 16px; font-size: 14px; color: var(--text);
 }
 
-/* -------- ПЛИТКА (tile) -------- */
 .grid-tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap: 20px; }
 .tile {
   background: var(--bg-card); border-radius: 10px; padding: 12px;
@@ -131,13 +168,11 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 .tile .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
 .tile .stars { color: #E8B96E; font-size: 12px; letter-spacing: 1px; }
 
-/* -------- КОМПАКТНАЯ СЕТКА -------- */
 .grid-compact { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap: 12px; }
 .grid-compact .tile { padding: 8px; }
 .grid-compact .tile .t { font-size: 12px; margin-top: 6px; -webkit-line-clamp: 2; }
 .grid-compact .tile .a { font-size: 11px; }
 
-/* -------- СПИСОК -------- */
 .list-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
 .list-table th { text-align: left; padding: 10px 14px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); background: var(--bg-soft); }
 .list-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
@@ -145,7 +180,6 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 .list-table tr:hover td { background: var(--bg-soft); }
 .list-table .mini-cover { width: 32px; height: 48px; border-radius: 3px; object-fit: cover; background: var(--bg-soft); }
 
-/* -------- КНИЖНЫЕ ПОЛКИ -------- */
 .shelf-block { margin-bottom: 40px; }
 .shelf-title {
   font-family: Georgia, serif; font-size: 22px; font-weight: 600;
@@ -154,11 +188,11 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 .shelf-title .count { font-size: 13px; color: var(--text-muted); font-weight: 400; font-family: -apple-system, sans-serif;}
 .shelf-row {
   display: flex; flex-wrap: wrap; gap: 14px; padding: 18px 20px 26px;
-  background: linear-gradient(180deg, transparent 0%, transparent 60%, rgba(0,0,0,.05) 100%);
+  background: var(--bg-overlay); backdrop-filter: blur(4px);
   border-radius: 8px 8px 0 0; position: relative;
   min-height: 220px; transition: background .2s;
 }
-.shelf-row.dragover { background: rgba(139,111,71,.08); outline: 2px dashed var(--accent-soft); }
+.shelf-row.dragover { background: rgba(139,111,71,.15); outline: 2px dashed var(--accent-soft); outline-offset: -6px; }
 .shelf-plank {
   height: 18px; background: linear-gradient(180deg, var(--wood-light) 0%, var(--wood-dark) 60%, var(--wood-dark) 100%);
   border-radius: 0 0 4px 4px; box-shadow: 0 6px 12px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.25);
@@ -166,19 +200,19 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 }
 .book-on-shelf {
   width: 110px; flex-shrink: 0; cursor: grab; position: relative;
-  transition: transform .15s; text-align: center;
+  transition: transform .15s; text-align: center; user-select: none;
 }
 .book-on-shelf:active { cursor: grabbing; }
 .book-on-shelf:hover { transform: translateY(-4px) scale(1.02); }
-.book-on-shelf.dragging { opacity: .4; }
+.book-on-shelf.dragging { opacity: .4; transform: scale(.95); }
 .book-on-shelf .cover-wrap {
   width: 100%; aspect-ratio: 2/3; border-radius: 4px; overflow: hidden;
   background: var(--bg-soft); box-shadow: 0 3px 8px rgba(0,0,0,.25), inset 0 0 0 1px var(--border);
+  pointer-events: none;
 }
 .book-on-shelf img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.book-on-shelf .title { font-size: 11px; margin-top: 6px; color: var(--text); line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.book-on-shelf .title { font-size: 11px; margin-top: 6px; color: var(--text); line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; pointer-events: none; }
 
-/* -------- КОРЕШОК-ЗАГЛУШКА -------- */
 .spine {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
   padding: 12px; text-align: center; position: relative; overflow: hidden;
@@ -205,8 +239,6 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 
 .empty { color: var(--text-muted); text-align: center; padding: 40px; }
 
-/* карточка */
-.card-form { display: grid; grid-template-columns: 280px 1fr; gap: 24px; }
 .card-form label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
 .card-form input, .card-form select, .card-form textarea {
   width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
@@ -215,6 +247,16 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 .card-form input:focus, .card-form textarea:focus, .card-form select:focus {
   outline: 2px solid var(--accent-soft); border-color: var(--accent);
 }
+
+footer.site-footer {
+  margin-top: 60px; padding: 28px 24px 32px;
+  background: var(--header-bg); color: var(--header-text); text-align: center;
+  font-size: 13px; line-height: 1.7; border-top: 3px solid var(--accent);
+}
+footer.site-footer a { color: var(--accent-soft); }
+footer.site-footer a:hover { color: var(--accent); }
+footer.site-footer .name { font-family: Georgia, serif; font-size: 15px; margin-bottom: 4px; }
+footer.site-footer .small { opacity: .6; font-size: 11px; margin-top: 10px; }
 
 @media (max-width: 800px) {
   .layout { grid-template-columns: 1fr; }
@@ -231,7 +273,6 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
     <input class="search-mini" type="text" name="q" value="{{ request.args.get('q','') }}" placeholder="Поиск по названию или автору">
   </form>
 
-  <!-- переключатель вида -->
   <form method="post" action="/prefs" style="display:flex; gap:4px;" id="view-switch">
     <input type="hidden" name="back" value="{{ request.full_path }}">
     <input type="hidden" name="theme" value="{{ theme }}">
@@ -240,7 +281,6 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
     {% endfor %}
   </form>
 
-  <!-- переключатель темы -->
   <form method="post" action="/prefs" style="display:flex; gap:4px;">
     <input type="hidden" name="back" value="{{ request.full_path }}">
     <input type="hidden" name="view" value="{{ view }}">
@@ -293,5 +333,12 @@ button.primary:hover { background: var(--accent-hover); color: #fff; }
 
   <main>{% block content %}{% endblock %}</main>
 </div>
+
+<footer class="site-footer">
+  <div class="name">Автор программы — Екатерина Евстюнина</div>
+  <div>Телефон: <a href="tel:+79965642818">+7 996 564-28-18</a> · Email: <a href="mailto:e@evstyunina.ru">e@evstyunina.ru</a></div>
+  <div class="small">© 2026 Екатерина Евстюнина. Все права защищены.<br>
+  Данные хранятся локально на вашем компьютере и не передаются на сторонние серверы, кроме указанных в настройках онлайн-сервисов (Google Books, Open Library).</div>
+</footer>
 </body>
 </html>
