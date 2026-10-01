@@ -29,8 +29,12 @@ def _run():
             try:
                 info = _lookup(r["title"], r["author"])
                 cover_name = None
-                if info and info.get("cover_url") and not r["cover"]:
-                    cover_name = _download_cover(r["id"], info["cover_url"])
+                if not r["cover"]:
+                    # сначала пробуем URL из метаданных, потом сами ищем
+                    if info and info.get("cover_url"):
+                        cover_name = _download_cover(r["id"], info["cover_url"])
+                    if not cover_name:
+                        cover_name = fetch_cover_for(r["id"], r["title"], r["author"])
                 with db.connect() as c:
                     if info:
                         c.execute("""UPDATE books
@@ -52,14 +56,67 @@ def _download_cover(book_id, url):
     try:
         if url.startswith("http://"):
             url = "https://" + url[len("http://"):]
-        r = requests.get(url, timeout=15)
-        if not r.ok or len(r.content) < 500:
+        # Гугл отдаёт обложки через свои прокси — снимаем параметры сжатия
+        if "books.google" in url:
+            url = url.split("&edge=")[0].split("&zoom=")[0]
+        r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        if not r.ok or len(r.content) < 800:
             return None
         name = f"enrich_{book_id}.jpg"
-        (COVERS_DIR / name).write_bytes(r.content)
+        try:
+            from PIL import Image
+            from io import BytesIO
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+            img.thumbnail((600, 900))
+            img.save(COVERS_DIR / name, "JPEG", quality=88)
+        except Exception:
+            (COVERS_DIR / name).write_bytes(r.content)
         return name
     except Exception:
         return None
+
+def fetch_cover_for(book_id, title, author):
+    """Публичная функция: ищет обложку по одному названию/автору, без кэша."""
+    if not title:
+        return None
+    queries = []
+    if author:
+        queries.append(f"{title} {author}")
+        queries.append(f"{author} {title}")
+    queries.append(title)
+    # Open Library
+    for q in queries:
+        try:
+            r = requests.get("https://openlibrary.org/search.json",
+                             params={"q": q, "limit": 5, "fields": "cover_i,title,author_name"},
+                             timeout=10)
+            if r.ok:
+                for d in r.json().get("docs", []):
+                    cid = d.get("cover_i")
+                    if cid:
+                        name = _download_cover(book_id, f"https://covers.openlibrary.org/b/id/{cid}-L.jpg")
+                        if name:
+                            return name
+        except Exception:
+            pass
+    # Google Books
+    for q in queries:
+        try:
+            r = requests.get("https://www.googleapis.com/books/v1/volumes",
+                             params={"q": q, "maxResults": 5}, timeout=10)
+            if r.ok:
+                for item in r.json().get("items", []):
+                    vi = item.get("volumeInfo", {})
+                    imgs = vi.get("imageLinks") or {}
+                    url = (imgs.get("extraLarge") or imgs.get("large")
+                           or imgs.get("medium") or imgs.get("thumbnail"))
+                    if url:
+                        name = _download_cover(book_id, url)
+                        if name:
+                            return name
+        except Exception:
+            pass
+    return None
 
 def _cache_get(q):
     with db.connect() as c:
@@ -86,8 +143,7 @@ def _lookup(title, author):
                 vi = items[0]["volumeInfo"]
                 imgs = vi.get("imageLinks") or {}
                 cover_url = (imgs.get("extraLarge") or imgs.get("large")
-                             or imgs.get("medium") or imgs.get("thumbnail")
-                             or imgs.get("smallThumbnail"))
+                             or imgs.get("medium") or imgs.get("thumbnail"))
                 result = {"description": vi.get("description", ""),
                           "title": vi.get("title"),
                           "authors": vi.get("authors"),

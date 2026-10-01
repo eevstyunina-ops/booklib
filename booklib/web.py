@@ -72,7 +72,8 @@ def create_app():
                 "SELECT s.name FROM shelves s JOIN book_shelves bs ON bs.shelf_id=s.id WHERE bs.book_id=?", (bid,))]
         q = urllib.parse.quote(f"{book['title']} {book['author']}".strip())
         links = [(label, url.format(q=q)) for label, url in SEARCH_LINKS]
-        return render_template("card.html", book=book, tags=tags, shelves=shelves, links=links)
+        return render_template("card.html", book=book, tags=tags, shelves=shelves, links=links,
+                               cover_msg=request.args.get("cover_msg"))
 
     @app.route("/book/<int:bid>/update", methods=["POST"])
     def update(bid):
@@ -90,28 +91,41 @@ def create_app():
         _set_shelves(bid, f.get("shelves", ""))
         return redirect(url_for("card", bid=bid))
 
-    @app.route("/book/<int:bid>/cover", methods=["POST"])
+    @app.route("/book/<int:bid>/cover/upload", methods=["POST"])
     def upload_cover(bid):
         f = request.files.get("cover")
-        if f and f.filename:
-            name = f"manual_{bid}.jpg"
-            try:
-                from PIL import Image
-                img = Image.open(f.stream).convert("RGB")
-                img.thumbnail((600, 900))
-                img.save(COVERS_DIR / name, "JPEG", quality=85)
-            except Exception:
-                f.stream.seek(0)
-                (COVERS_DIR / name).write_bytes(f.read())
+        if not f or not f.filename:
+            return redirect(url_for("card", bid=bid, cover_msg="Файл не выбран"))
+        name = f"manual_{bid}.jpg"
+        try:
+            from PIL import Image
+            img = Image.open(f.stream).convert("RGB")
+            img.thumbnail((600, 900))
+            img.save(COVERS_DIR / name, "JPEG", quality=88)
+        except Exception as e:
+            return redirect(url_for("card", bid=bid, cover_msg=f"Ошибка: {e}"))
+        with db.connect() as c:
+            c.execute("UPDATE books SET cover=? WHERE id=?", (name, bid))
+        return redirect(url_for("card", bid=bid, cover_msg="Обложка загружена"))
+
+    @app.route("/book/<int:bid>/cover/search", methods=["POST"])
+    def search_cover(bid):
+        with db.connect() as c:
+            row = c.execute("SELECT title, author FROM books WHERE id=?", (bid,)).fetchone()
+        if not row:
+            abort(404)
+        name = enrich.fetch_cover_for(bid, row["title"] or "", row["author"] or "")
+        if name:
             with db.connect() as c:
                 c.execute("UPDATE books SET cover=? WHERE id=?", (name, bid))
-        return redirect(url_for("card", bid=bid))
+            return redirect(url_for("card", bid=bid, cover_msg="Обложка найдена"))
+        return redirect(url_for("card", bid=bid, cover_msg="В интернете ничего не нашлось"))
 
     @app.route("/book/<int:bid>/cover/clear", methods=["POST"])
     def clear_cover(bid):
         with db.connect() as c:
             c.execute("UPDATE books SET cover=NULL WHERE id=?", (bid,))
-        return redirect(url_for("card", bid=bid))
+        return redirect(url_for("card", bid=bid, cover_msg="Обложка удалена"))
 
     @app.route("/book/<int:bid>/open", methods=["POST"])
     def open_book(bid):

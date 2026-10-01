@@ -4,6 +4,12 @@
 <h1>{{ book.title or '(без названия)' }}</h1>
 <p style="color:#555;">{{ book.author }}</p>
 
+{% if cover_msg %}
+  <div style="padding:8px 12px;background:#fff3cd;border-radius:6px;margin:8px 0;font-size:14px;">
+    {{ cover_msg }}
+  </div>
+{% endif %}
+
 <div style="display:flex;gap:16px;margin:16px 0;flex-wrap:wrap;">
   <button class="primary" onclick="fetch('/book/{{book.id}}/open',{method:'POST'})">Открыть файл</button>
   <button onclick="fetch('/book/{{book.id}}/reveal',{method:'POST'})">Показать в папке</button>
@@ -12,27 +18,38 @@
   {% endfor %}
 </div>
 
-<form method="post" action="/book/{{book.id}}/update" style="display:grid;grid-template-columns:260px 1fr;gap:20px;">
+<div style="display:grid;grid-template-columns:260px 1fr;gap:20px;">
   <div>
     {% if book.cover %}
-      <img src="/cover/{{book.cover}}" style="width:100%;border-radius:8px;">
+      <img src="/cover/{{book.cover}}" style="width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);">
     {% else %}
-      <div style="height:340px;background:#e6e6ef;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#888;">нет обложки</div>
+      <div style="height:360px;background:linear-gradient(135deg,#E8C4C8 0%,#D4B5B8 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:Georgia,serif;">
+        <div style="text-align:center;padding:20px;">
+          <div style="font-size:48px;opacity:.6;">📖</div>
+          <div style="margin-top:8px;font-size:13px;opacity:.85;">обложки нет</div>
+        </div>
+      </div>
     {% endif %}
 
-    <form method="post" action="/book/{{book.id}}/cover" enctype="multipart/form-data" style="margin-top:8px;">
-      <label style="font-size:12px;cursor:pointer;">
-        Загрузить обложку
-        <input type="file" name="cover" accept="image/*" onchange="this.form.submit()" style="display:block;margin-top:4px;">
+    <form method="post" action="/book/{{book.id}}/cover/search" style="margin-top:10px;">
+      <button type="submit" style="width:100%;padding:6px;">🔍 Найти обложку в интернете</button>
+    </form>
+
+    <form method="post" action="/book/{{book.id}}/cover/upload" enctype="multipart/form-data" style="margin-top:6px;">
+      <label style="display:block;font-size:12px;cursor:pointer;padding:6px;text-align:center;background:#f0f0f5;border-radius:6px;">
+        ⬆ Загрузить свою картинку
+        <input type="file" name="cover" accept="image/*" onchange="this.form.submit()" style="display:none;">
       </label>
     </form>
+
     {% if book.cover %}
     <form method="post" action="/book/{{book.id}}/cover/clear" style="margin-top:6px;">
-      <button type="submit" style="font-size:12px;">Удалить обложку</button>
+      <button type="submit" style="width:100%;padding:6px;font-size:12px;">Удалить обложку</button>
     </form>
     {% endif %}
   </div>
-  <div style="display:flex;flex-direction:column;gap:10px;">
+
+  <form method="post" action="/book/{{book.id}}/update" style="display:flex;flex-direction:column;gap:10px;">
     <label>Название <input name="title" value="{{ book.title }}" style="width:100%"></label>
     <label>Автор    <input name="author" value="{{ book.author }}" style="width:100%"></label>
     <label>Статус
@@ -59,8 +76,8 @@
       <textarea name="notes" rows="5" style="width:100%">{{ book.notes or '' }}</textarea>
     </label>
     <div><button class="primary" type="submit">Сохранить</button></div>
-  </div>
-</form>
+  </form>
+</div>
 
 <details style="margin-top:24px;">
   <summary style="cursor:pointer;">Техническая информация</summary>
