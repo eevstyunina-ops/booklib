@@ -61,6 +61,10 @@ def init():
     with connect() as c:
         c.executescript(SCHEMA)
         _migrate(c)
+        try:
+            c.execute("INSERT OR IGNORE INTO settings(id) VALUES(1)")
+        except Exception:
+            pass
 
 @contextmanager
 def connect():
