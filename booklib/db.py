@@ -65,6 +65,10 @@ def init():
             c.execute("INSERT OR IGNORE INTO settings(id) VALUES(1)")
         except Exception:
             pass
+        try:
+            c.execute("INSERT OR IGNORE INTO settings(id) VALUES(1)")
+        except Exception:
+            pass
 
 @contextmanager
 def connect():
